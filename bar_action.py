@@ -31,6 +31,8 @@ class ActionBar(QObject):
 
         self.asc = asc
         self.ui: Ui_MainWindow = self.asc.ui
+        self.hierarchy: Hierarchy = self.ui.hierarchy
+
         self.catalog: CatalogDatas = self.asc.catalog
         self.allplan: AllplanDatas = self.asc.allplan
 
@@ -83,7 +85,7 @@ class ActionBar(QObject):
         # Loading Link widgets
         # ---------------------------------------
 
-        self.link_creation_widget = LinkAdd(self.catalog)
+        self.link_creation_widget = LinkAdd(catalog=self.catalog, hierarchy=self.hierarchy)
         self.link_creation_widget.link_add_signal.connect(self.lien_ajouter_action)
 
         self.link_add_widget = LinKAddAgain()
@@ -166,13 +168,13 @@ class ActionBar(QObject):
         # Loading signals expand/collapse
         # ---------------------------------------
 
-        self.ui.expand_all_bt.clicked.connect(self.deplier_tous)
+        self.ui.expand_all_bt.clicked.connect(self.expand_menu_show)
 
         help_modify_tooltips(widget=self.ui.expand_all_bt,
                              short_link=help_interface_hierarchy,
                              help_text=self.asc.help_tooltip)
 
-        self.ui.collapse_all_bt.clicked.connect(self.replier_tous)
+        self.ui.collapse_all_bt.clicked.connect(self.collapse_menu_show)
 
         help_modify_tooltips(widget=self.ui.collapse_all_bt,
                              short_link=help_interface_hierarchy,
@@ -318,12 +320,12 @@ class ActionBar(QObject):
         # Loading signals Hierarchy
         # ---------------------------------------
 
-        self.ui.hierarchy.selectionModel().selectionChanged.connect(self.hierarchie_gestion_selection)
-        self.ui.hierarchy.customContextMenuRequested.connect(self.hierarchie_menu_contextuel)
-        self.ui.hierarchy.clicked.connect(self.hierarchie_simple_clic)
-        self.ui.hierarchy.doubleClicked.connect(self.hierarchie_double_clic)
+        self.hierarchy.selectionModel().selectionChanged.connect(self.hierarchie_gestion_selection)
+        self.hierarchy.customContextMenuRequested.connect(self.hierarchie_menu_contextuel)
+        self.hierarchy.clicked.connect(self.hierarchie_simple_clic)
+        self.hierarchy.doubleClicked.connect(self.hierarchie_double_clic)
 
-        self.ui.hierarchy.setWhatsThis(help_interface_hierarchy)
+        self.hierarchy.setWhatsThis(help_interface_hierarchy)
 
         # ---------------------------------------
         # Loading signals Attributes detail
@@ -353,63 +355,24 @@ class ActionBar(QObject):
 
         if not qm_check(qm_parent):
 
-            qm_val = self.ui.hierarchy.model().index(qmodelindex.row(), col_cat_value)
+            qm_val = self.hierarchy.model().index(qmodelindex.row(), col_cat_value)
 
         else:
 
             qm_val = qm_parent.child(qmodelindex.row(), col_cat_value)
 
-        qm_val = self.catalog.map_to_filter(qm_val)
+        qm_val = self.hierarchy.map_to_filter(qm=qm_val)
 
         if not qm_check(qm_val):
             return
 
-        expanded = self.ui.hierarchy.isExpanded(qm_val)
+        expanded = self.hierarchy.isExpanded(qm_val)
 
-        self.ui.hierarchy.setExpanded(qm_val, not expanded)
+        self.hierarchy.setExpanded(qm_val, not expanded)
 
     def hierarchie_gestion_selection(self):
 
-        # print("onglet_hierarchie -- hierarchie_selection_change")
-
-        qm_selection_list: list = self.ui.hierarchy.selectionModel().selectedRows(col_cat_value)
-
-        current_ele_type = ""
-        invalid = QItemSelection()
-
-        column_last = self.catalog.cat_model.columnCount() - 1
-
-        for qm in reversed(qm_selection_list):
-
-            qm: QModelIndex
-
-            current_model = qm.model()
-
-            if current_model is None:
-                continue
-
-            qm_parent: QModelIndex = qm.parent()
-
-            if qm_parent is None:
-                continue
-
-            current_row = qm.row()
-
-            qm_start = current_model.index(current_row, 0, qm_parent)
-            qm_end = current_model.index(current_row, column_last, qm_parent)
-
-            ele_type = qm.data(user_data_type)
-
-            if current_ele_type == "":
-                current_ele_type = ele_type
-                continue
-
-            if current_ele_type != "" and current_ele_type == ele_type:
-                continue
-
-            invalid.select(qm_start, qm_end)
-
-        self.ui.hierarchy.selectionModel().select(invalid, QItemSelectionModel.Deselect)
+        self.hierarchy.selection_manage()
 
         self.hierarchie_selection_change()
 
@@ -417,10 +380,10 @@ class ActionBar(QObject):
 
         self.catalog.change_made = True
 
-        if self.catalog.cat_model.rowCount() > 0:
-            self.catalog.catalog_header_manage()
+        if self.hierarchy.cat_model.rowCount() > 0:
+            self.hierarchy.header_manage()
 
-        qs_selection_list = self.catalog.get_qs_selection_list()
+        qs_selection_list = self.hierarchy.get_qs_selection_list()
 
         formula_widget_number = self.formula_editor_widget.formula_selection_changed()
 
@@ -439,12 +402,12 @@ class ActionBar(QObject):
             self.asc.buttons_manage()
             return
 
-        if self.ui.search_error_bt.isChecked() or self.ui.search_bt.isChecked():
+        if self.hierarchy.cat_filter_1.rowCount() != 0:
 
-            error_current_qs = self.catalog.get_current_qs()
+            last_qm_model_selection_list = self.hierarchy.get_qm_model_selection_list()
 
-            if error_current_qs is not None:
-                self.catalog.error_current_qs = error_current_qs
+            if len(last_qm_model_selection_list) != 0:
+                self.hierarchy.selected_list = last_qm_model_selection_list
 
         ele_type: str = qs.data(user_data_type)
 
@@ -480,7 +443,7 @@ class ActionBar(QObject):
             qs_parent: MyQstandardItem = qs.parent()
 
             if qs_parent is None:
-                qs_parent = self.catalog.cat_model.invisibleRootItem()
+                qs_parent = self.hierarchy.cat_model.invisibleRootItem()
 
             row_actuel = qs.row()
 
@@ -488,7 +451,11 @@ class ActionBar(QObject):
 
             qs_attrib = qs.child(0, col_cat_value)
 
-            attribute_datas = self.allplan.find_all_datas_by_number("207")
+            attribute_obj = self.allplan.attributes_dict.get("207")
+
+            if not isinstance(attribute_obj, AttributeDatas):
+                print("bar_action -- hierarchie_selection_change -- not isinstance(attribute_obj, AttributeDatas) 1")
+                return
 
             self.attributes_detail_loader.add_name(qs_value=qs,
                                                    qs_selection_list=None)
@@ -496,7 +463,7 @@ class ActionBar(QObject):
             self.attributes_detail_loader.add_lineedit_str(qm_parent=qs.index(),
                                                            qs_value=qs_attrib,
                                                            qs_desc=qs_desc,
-                                                           attribute_datas=attribute_datas,
+                                                           attribute_obj=attribute_obj,
                                                            is_material=False)
 
             self.asc.buttons_manage()
@@ -512,12 +479,34 @@ class ActionBar(QObject):
             link_model.setHorizontalHeaderLabels([self.tr("Code"), self.tr("Description")])
 
             qs_root = link_model.invisibleRootItem()
+            qs_root.setText("Root")
 
             material_name = qm_parent.data()
 
-            self.catalog.link_get_structure(material_name=material_name, qs_parent=qs_root)
+            qm_desc = self.hierarchy.cat_model.index(qm_parent.row(), col_cat_desc, qm_parent.parent())
 
-            self.attributes_detail_loader.ajouter_lien(qm_parent.parent(), qm_parent.row(), link_model)
+            if not qm_check(qm_desc):
+                description_txt = ""
+            else:
+                description_txt = qm_desc.data()
+
+            font = QStandardItem().font()
+            font.setBold(True)
+
+            qs_sub_material = QStandardItem(get_icon(material_icon), material_name)
+            qs_sub_material.setData(material_code, user_data_type)
+            qs_sub_material.setFont(font)
+            qs_sub_material.setEnabled(False)
+
+            qs_sub_description = QStandardItem(description_txt)
+            qs_sub_description.setFont(font)
+            qs_sub_description.setEnabled(False)
+
+            qs_root.appendRow([qs_sub_material, qs_sub_description])
+
+            self.catalog.link_get_structure(material_name=material_name, qs_parent=qs_sub_material, visited=set())
+
+            self.attributes_detail_loader.add_lien(qm_parent.parent(), qm_parent.row(), link_model)
             self.asc.buttons_manage()
             return
 
@@ -536,14 +525,16 @@ class ActionBar(QObject):
 
             forbidden_names_list = list()
 
-        # self.attributes_detail_loader.add_title(title=self.tr("Propriétés"))
+        attribute_obj = self.allplan.attributes_dict.get(attribut_default_obj.current)
 
-        attribute_datas = self.allplan.find_all_datas_by_number(number=attribute_default_base)
+        if not isinstance(attribute_obj, AttributeDatas):
+            print("bar_action -- hierarchie_selection_change -- not isinstance(attribute_obj, AttributeDatas) 2")
+            return
 
         self.attributes_detail_loader.add_code(qs_value=qs,
                                                forbidden_names_list=forbidden_names_list,
                                                material_linked=material_linked,
-                                               attribute_datas=attribute_datas)
+                                               attribute_obj=attribute_obj)
 
         nb_attributs: int = qs.rowCount()
 
@@ -564,37 +555,40 @@ class ActionBar(QObject):
 
         for attribute_index in range(nb_attributs):
 
-            qs_number: MyQstandardItem = qs.child(attribute_index, col_cat_number)
+            qs_value = qs.child(attribute_index, col_cat_value)
+            qs_index = qs.child(attribute_index, col_cat_index)
+            qs_number = qs.child(attribute_index, col_cat_number)
 
-            qs_val: MyQstandardItem = qs.child(attribute_index, col_cat_value)
-            qs_index: MyQstandardItem = qs.child(attribute_index, col_cat_index)
-
-            if not isinstance(qs_number, Attribute):
+            if not isinstance(qs_number, Info):
                 continue
 
-            if not isinstance(qs_val, Attribute):
+            if not isinstance(qs_index, Info):
+                continue
+
+            if not isinstance(qs_value, Attribute):
                 break
 
-            attrib_number = qs_number.text()
+            number_str = qs_number.text()
 
-            if not isinstance(attrib_number, str):
+            if not isinstance(number_str, str):
                 continue
 
-            if attrib_number in full_datas:
+            if number_str in full_datas:
                 continue
 
-            attribute_datas = self.allplan.find_all_datas_by_number(number=attrib_number)
+            attribute_obj = self.allplan.attributes_dict.get(number_str)
 
-            if len(attribute_datas) == 0:
+            if not isinstance(attribute_obj, AttributeDatas):
+                print("bar_action -- hierarchie_selection_change -- not isinstance(attribute_obj, AttributeDatas) 3")
                 continue
 
-            attrib_name = attribute_datas.get(code_attr_name, "")
+            attrib_name = attribute_obj.name
 
             # --------------------------------
             # Description
             # --------------------------------
 
-            if attrib_number == "207":
+            if number_str == "207":
 
                 qs_parent = qs.parent()
 
@@ -608,9 +602,9 @@ class ActionBar(QObject):
                     is_material = isinstance(qs, Material)
 
                 self.attributes_detail_loader.add_lineedit_str(qm_parent=qm_parent,
-                                                               qs_value=qs_val,
+                                                               qs_value=qs_value,
                                                                qs_desc=qs_attrib,
-                                                               attribute_datas=attribute_datas,
+                                                               attribute_obj=attribute_obj,
                                                                is_material=is_material)
 
                 self.attributes_detail_loader.add_title(self.tr("Attributs additionnels"))
@@ -619,9 +613,9 @@ class ActionBar(QObject):
 
             # --------------------------------
 
-            if attrib_number in self.asc.attributes_order_list and self.asc.attributes_order_custom:
+            if number_str in self.asc.attributes_order_list and self.asc.attributes_order_custom:
 
-                value = attrib_number
+                value = number_str
                 current_list = attributes_order_list
 
             else:
@@ -631,16 +625,16 @@ class ActionBar(QObject):
                 if self.asc.attributes_order_col == 1:
                     value = attrib_name
                 else:
-                    value = attrib_number
+                    value = number_str
 
             # --------------------------------
             # Layer
             # --------------------------------
 
-            if attrib_number in attribute_val_default_layer:
-                layer_datas[attrib_number] = attribute_index
+            if number_str in attribute_val_default_layer:
+                layer_datas[number_str] = attribute_index
 
-                if attrib_number != attribute_val_default_layer_first:
+                if number_str != attribute_val_default_layer_first:
                     continue
 
                 current_list.append(value)
@@ -651,11 +645,11 @@ class ActionBar(QObject):
             # Fill
             # --------------------------------
 
-            if attrib_number in attribute_val_default_fill:
+            if number_str in attribute_val_default_fill:
 
-                fill_datas[attrib_number] = attribute_index
+                fill_datas[number_str] = attribute_index
 
-                if attrib_number != attribute_val_default_fill_first:
+                if number_str != attribute_val_default_fill_first:
                     continue
 
                 current_list.append(value)
@@ -666,11 +660,11 @@ class ActionBar(QObject):
             # Room
             # --------------------------------
 
-            elif attrib_number in attribute_val_default_room:
+            elif number_str in attribute_val_default_room:
 
-                room_datas[attrib_number] = attribute_index
+                room_datas[number_str] = attribute_index
 
-                if attrib_number != attribute_val_default_room_first:
+                if number_str != attribute_val_default_room_first:
                     continue
 
                 current_list.append(value)
@@ -687,11 +681,11 @@ class ActionBar(QObject):
             # Add to datas
             # --------------------------------
 
-            full_datas[value] = {"attrib_number": attrib_number,
+            full_datas[value] = {"attrib_number": number_str,
                                  "attrib_name": attrib_name,
                                  "attribute_index": attribute_index,
-                                 "attribute_datas": attribute_datas,
-                                 "qs_val": qs_val,
+                                 "attribute_obj": attribute_obj,
+                                 "qs_val": qs_value,
                                  "qs_index": qs_index}
 
         # --------------------------------
@@ -819,114 +813,136 @@ class ActionBar(QObject):
 
     def attribute_load_list(self, current_datas: dict, qm_parent: QModelIndex):
 
-        attrib_number: str = current_datas.get("attrib_number")
+        number_str: str = current_datas.get("attrib_number")
 
-        if not isinstance(attrib_number, str):
+        if not isinstance(number_str, str):
+            print("bar_action -- attribute_load_list -- not isinstance(number_str, str)")
             return
 
         # --------------------------------
         # Attribute 18358
         # --------------------------------
 
-        if attrib_number == "18358" and len(self.allplan.allplan_18358_dict) != 0:
-
+        if number_str == "18358" and len(self.allplan.allplan_18358_dict) != 0:
             self.choices_widget.choice_show(choice_dict=self.allplan.allplan_18358_dict,
                                             title=self.tr("Modèle d'ensemble d'attributs"))
 
         attrib_name: str = current_datas.get("attrib_name")
 
         if not isinstance(attrib_name, str):
+            print("bar_action -- attribute_load_list -- not isinstance(attrib_name, str)")
             return
+
+        # ------
 
         attribute_index: int = current_datas.get("attribute_index")
 
         if not isinstance(attribute_index, int):
+            print("bar_action -- attribute_load_list -- not isinstance(attribute_index, int)")
             return
 
-        attribute_datas: dict = current_datas.get("attribute_datas")
+        # ------
 
-        if not isinstance(attribute_datas, dict):
+        attribute_obj: AttributeDatas = current_datas.get("attribute_obj")
+
+        if not isinstance(attribute_obj, AttributeDatas):
+            print("bar_action -- attribute_load_list -- not isinstance(attribute_obj, AttributeDatas)")
             return
 
-        if len(attribute_datas) == 0:
-            return
+        # ------
 
-        qs_val: QStandardItem = current_datas.get("qs_val")
+        qs_val = current_datas.get("qs_val")
 
         if not isinstance(qs_val, MyQstandardItem):
+            print("bar_action -- attribute_load_list -- not isinstance(qs_val, MyQstandardItem)")
             return
+
+        # ------
 
         qs_index: QStandardItem = current_datas.get("qs_index")
 
         if not isinstance(qs_index, MyQstandardItem):
+            print("bar_action -- attribute_load_list -- not isinstance(qs_index, MyQstandardItem)")
             return
 
-        attrib_option: str = attribute_datas.get(code_attr_option)
+        # ------
 
-        if not isinstance(attrib_option, str):
+        if not isinstance(attribute_obj.option, str):
+            print("bar_action -- attribute_load_list -- not isinstance(attribute_obj.option)")
             return
 
-        if attrib_number == "335":
-            self.attributes_detail_loader.add_surface(qs_val=qs_val, attribute_datas=attribute_datas)
+        # --------------------------------
+        # Unknown attribute
+        # --------------------------------
+
+        if type_unknown in attribute_obj.option:
+            self.attributes_detail_loader.add_unknown(attribute_obj=attribute_obj, value=qs_val.text())
+            return
+
+        # --------------------------------
+        # Surface
+        # --------------------------------
+
+        if number_str == "335":
+            self.attributes_detail_loader.add_surface(qs_val=qs_val, attribute_obj=attribute_obj)
             return
 
         # --------------------------------
         # Formule
         # --------------------------------
 
-        if "Formule" in attrib_option:
-            self.attributes_detail_loader.add_formula(qs_val=qs_val, attribute_datas=attribute_datas)
+        if "Formule" in attribute_obj.option:
+            self.attributes_detail_loader.add_formula(qs_val=qs_val, attribute_obj=attribute_obj)
             return
 
         # --------------------------------
         # Combobox
         # --------------------------------
 
-        if "ComboBox" in attrib_option:
+        if "ComboBox" in attribute_obj.option:
             self.attributes_detail_loader.add_combobox(qs_value=qs_val,
                                                        qs_index=qs_index,
-                                                       attribute_datas=attribute_datas)
+                                                       attribute_obj=attribute_obj)
             return
 
         # --------------------------------
         # Checkbox
         # --------------------------------
 
-        if attrib_option == code_attr_chk:
+        if attribute_obj.option == code_attr_chk:
             self.attributes_detail_loader.ajouter_checkbox(qs_val=qs_val,
-                                                           attribute_datas=attribute_datas)
+                                                           attribute_obj=attribute_obj)
             return
 
         # --------------------------------
         # Date
         # --------------------------------
 
-        if attrib_option == "Date" or attrib_name.startswith("Date"):
-            self.attributes_detail_loader.add_date(qs_value=qs_val, attribute_datas=attribute_datas)
+        if attribute_obj.option == "Date" or attrib_name.startswith("Date"):
+            self.attributes_detail_loader.add_date(qs_value=qs_val, attribute_obj=attribute_obj)
 
             return
 
         # --------------------------------
         # TextBox
         # --------------------------------
-        qs_parent = self.catalog.cat_model.itemFromIndex(qm_parent)
+        qs_parent = self.hierarchy.cat_model.itemFromIndex(qm_parent)
 
         if not isinstance(qs_parent, (Material, Component)):
+            print("bar_action -- attribute_load_list -- not isinstance(qs_parent, (Material, Component))")
             return
 
-        if attrib_option == code_attr_str:
-
+        if attribute_obj.option == code_attr_str:
             self.attributes_detail_loader.add_lineedit_str(qm_parent=qm_parent,
                                                            qs_value=qs_val,
                                                            qs_desc=None,
-                                                           attribute_datas=attribute_datas,
+                                                           attribute_obj=attribute_obj,
                                                            is_material=isinstance(qs_parent, Material))
+            return
 
-        else:
-
-            self.attributes_detail_loader.add_lineedit(qs_value=qs_val,
-                                                       attribute_datas=attribute_datas,
-                                                       is_material=isinstance(qs_parent, Material))
+        self.attributes_detail_loader.add_lineedit(qs_value=qs_val,
+                                                   attribute_obj=attribute_obj,
+                                                   is_material=isinstance(qs_parent, Material))
 
     def hierarchie_menu_contextuel(self, point: QPoint):
 
@@ -958,7 +974,7 @@ class ActionBar(QObject):
 
         menu.add_title(title=self.tr("Affichage"))
 
-        if self.catalog.description_show:
+        if self.hierarchy.description_show:
 
             menu.add_action(qicon=get_icon(description_off_icon),
                             title=self.tr("Afficher / Masquer les descriptions de la hiérarchie"),
@@ -978,23 +994,29 @@ class ActionBar(QObject):
         if self.ui.expand_all_bt.isEnabled() or self.ui.collapse_all_bt.isEnabled():
             menu.addSeparator()
 
-        if self.ui.expand_all_bt.isEnabled():
-            menu.add_action(qicon=get_icon(expand_all_icon),
-                            title=self.tr("Déplier tous"),
-                            action=self.deplier_tous,
-                            tooltips=self.ui.expand_all_bt.toolTip(),
-                            short_link=self.ui.expand_all_bt.whatsThis())
+        # ------------------------------
 
-        if self.ui.collapse_all_bt.isEnabled():
-            menu.add_action(qicon=get_icon(collapse_all_icon),
-                            title=self.tr("Replier tous"),
-                            action=self.replier_tous,
-                            tooltips=self.ui.collapse_all_bt.toolTip(),
-                            short_link=self.ui.collapse_all_bt.whatsThis())
+        if self.ui.expand_all_bt.isEnabled():
+            expand_action = menu.add_action(qicon=get_icon(expand_all_icon),
+                                            title=self.tr("Déplier"),
+                                            tooltips=self.ui.expand_all_bt.toolTip(),
+                                            short_link=self.ui.expand_all_bt.whatsThis())
+
+            expand_action.setMenu(self.hierarchy.expand_menu_creation())
 
         # ------------------------------
 
-        qs = self.catalog.get_current_qs()
+        if self.ui.collapse_all_bt.isEnabled():
+            collapse_action = menu.add_action(qicon=get_icon(collapse_all_icon),
+                                              title=self.tr("Replier"),
+                                              tooltips=self.ui.collapse_all_bt.toolTip(),
+                                              short_link=self.ui.collapse_all_bt.whatsThis())
+
+            collapse_action.setMenu(self.hierarchy.collapse_menu_creation())
+
+        # ------------------------------
+
+        qs = self.hierarchy.get_current_qs()
 
         # ------------------------------
         # Déplacement
@@ -1135,10 +1157,10 @@ class ActionBar(QObject):
         # Coller
         # ------------------------------
 
-        if qs is None:
-            dict_compatible = {folder_code: self.tr("Enfant")}
-        else:
+        if isinstance(qs, (Folder, Material, Component, Link)):
             dict_compatible = qs.get_type_possibilities()
+        else:
+            dict_compatible = {folder_code: self.tr("Enfant")}
 
         paste_menu = False
 
@@ -1222,7 +1244,7 @@ class ActionBar(QObject):
 
             link_menu.setMenu(sub_menu)
 
-        qs_selection_list = self.catalog.get_qs_selection_list()
+        qs_selection_list = self.hierarchy.get_qs_selection_list()
 
         if self.catalog.attribut_coller_recherche(qs_selection_list):
 
@@ -1278,7 +1300,7 @@ class ActionBar(QObject):
                             tooltips=self.ui.library_bt.toolTip(),
                             short_link=self.ui.library_bt.whatsThis())
 
-        menu.exec_(self.ui.hierarchy.mapToGlobal(point))
+        menu.exec_(self.hierarchy.mapToGlobal(point))
 
     def hierarchie_sous_menu_coller(self, clipboard: ClipboardDatas,
                                     type_ele: str,
@@ -1373,23 +1395,47 @@ class ActionBar(QObject):
         menu = MyContextMenu(short_link=help_link_new)  # OK
         menu.help_request.connect(self.asc.help_request)
 
-        search_start = self.catalog.cat_model.index(0, 0)
+        # -------------------
 
-        qm_link_search = self.catalog.cat_model.match(search_start, user_data_type, link_code, -1,
-                                                      Qt.MatchExactly | Qt.MatchRecursive)
+        qs_current = self.hierarchy.get_current_qs()
+
+        if isinstance(qs_current, (Component, Link)):
+            qs_current = qs_current.parent()
+
+        if not isinstance(qs_current, Material):
+            return menu
+
+        material_name = qs_current.text()
+
+        # -------------------
+
+        search_start = self.hierarchy.cat_model.index(0, 0)
+
+        qm_link_search = self.hierarchy.cat_model.match(search_start, user_data_type, link_code, -1,
+                                                        Qt.MatchExactly | Qt.MatchRecursive)
 
         if len(qm_link_search) == 0:
             return menu
 
         menu.add_title(title=self.tr("Ajouter un lien déjà existant"))
 
-        liste_test = list()
+        # -------------------
+
+        title_list = list()
+
+        forbidden_list = set()
+        self.catalog.link_get_forbidden_list(material_name=material_name, forbidden_list=forbidden_list)
+
+        loop_message = self.tr("Lien Impossible : boucle")
 
         for qm_val in qm_link_search:
 
-            title = qm_val.data()
+            title_original = qm_val.data()
 
-            if not isinstance(title, str):
+            if not isinstance(title_original, str):
+                continue
+
+            if title_original in title_list:
                 continue
 
             qm_parent = qm_val.parent()
@@ -1398,25 +1444,28 @@ class ActionBar(QObject):
 
             if qm_check(qm_parent):
 
-                qm_description = self.catalog.cat_model.index(qm_val.row(), col_cat_desc, qm_parent)
+                qm_description = self.hierarchy.cat_model.index(qm_val.row(), col_cat_desc, qm_parent)
 
                 if qm_check(qm_description):
                     description = qm_description.data()
 
-            if title in liste_test:
-                continue
+            title_list.append(title_original)
 
-            liste_test.append(title)
-
-            if description == "" or description == title:
-
-                menu.add_action(qicon=get_icon(link_icon),
-                                title=title,
-                                action=lambda val1=title, val2=description: self.lien_ajouter_action([[val1, val2]]))
+            if description == "" or description == title_original:
+                title_temp = title_original
             else:
-                menu.add_action(qicon=get_icon(link_icon),
-                                title=f"{title} - {description}",
-                                action=lambda val1=title, val2=description: self.lien_ajouter_action([[val1, val2]]))
+                title_temp = f"{title_original} - {description}"
+
+            item = menu.add_action(title=title_temp,
+                                   action=lambda val1=title_original, val2=description:
+                                   self.lien_ajouter_action([[val1, val2]]))
+
+            if title_original in forbidden_list:
+                item.setEnabled(False)
+                item.setToolTip(loop_message)
+                item.setIcon(get_icon(lock_icon))
+            else:
+                item.setIcon(get_icon(link_icon))
 
         return menu
 
@@ -1545,7 +1594,7 @@ class ActionBar(QObject):
                             tooltips=self.ui.copy_bt.toolTip(),
                             short_link=help_attribute_copy)
 
-        qs: MyQstandardItem = self.catalog.get_current_qs()
+        qs: MyQstandardItem = self.hierarchy.get_current_qs()
 
         if qs is None:
             ele_type = folder_code
@@ -1556,7 +1605,7 @@ class ActionBar(QObject):
 
             d = self.tr("Coller")
 
-            liste_selections_qs = self.catalog.get_qs_selection_list()
+            liste_selections_qs = self.hierarchy.get_qs_selection_list()
 
             if self.catalog.attribut_coller_recherche(liste_selections_qs):
 
@@ -1618,23 +1667,23 @@ class ActionBar(QObject):
 
         self.asc.formula_widget_close()
 
-        undo_list = self.catalog.undo_list.creation_liste_action()
+        undo_list = self.catalog.undo_list.action_get_list()
 
         if len(undo_list) == 0:
             return
 
         last_name = undo_list[-1]
 
-        last_action = self.catalog.undo_list.dict_actions.get(last_name, None)
+        last_action = self.catalog.undo_list.action_dict.get(last_name, None)
 
         if last_action is None:
             return
 
-        self.catalog.undo(last_action)
+        self.catalog.history_pressed(last_action)
 
     def undo_menu(self):
 
-        dict_actions = self.catalog.undo_list.dict_actions
+        dict_actions = self.catalog.undo_list.action_dict
 
         if len(dict_actions) == 0:
             return
@@ -1651,12 +1700,12 @@ class ActionBar(QObject):
 
         for nom_action in undo_list:
 
-            action = self.catalog.undo_list.dict_actions.get(nom_action, None)
+            action = self.catalog.undo_list.action_dict.get(nom_action, None)
 
             if action is None:
                 return
 
-            self.catalog.undo(action)
+            self.catalog.history_pressed(action)
 
     @staticmethod
     def a___________________redo_buttons______():
@@ -1666,23 +1715,23 @@ class ActionBar(QObject):
 
         self.asc.formula_widget_close()
 
-        redo_list = self.catalog.redo_list.creation_liste_action()
+        redo_list = self.catalog.redo_list.action_get_list()
 
         if len(redo_list) == 0:
             return
 
         last_name = redo_list[-1]
 
-        last_action = self.catalog.redo_list.dict_actions.get(last_name, None)
+        last_action = self.catalog.redo_list.action_dict.get(last_name, None)
 
         if last_action is None:
             return
 
-        self.catalog.redo(last_action)
+        self.catalog.history_pressed(action_current=last_action, undo=False)
 
     def redo_menu(self):
 
-        dict_actions = self.catalog.redo_list.dict_actions
+        dict_actions = self.catalog.redo_list.action_dict
 
         if len(dict_actions) == 0:
             return
@@ -1699,12 +1748,12 @@ class ActionBar(QObject):
 
         for nom_action in redo_list:
 
-            action = self.catalog.redo_list.dict_actions.get(nom_action, None)
+            action = self.catalog.redo_list.action_dict.get(nom_action, None)
 
             if action is None:
                 return
 
-            self.catalog.redo(action)
+            self.catalog.history_pressed(action_current=action, undo=False)
 
     @staticmethod
     def a___________________descriptions_manage______():
@@ -1712,127 +1761,31 @@ class ActionBar(QObject):
 
     def hierarchie_description(self):
 
-        self.catalog.description_show = not self.catalog.description_show
+        self.hierarchy.description_show = not self.hierarchy.description_show
 
-        self.catalog.catalog_header_manage()
+        self.hierarchy.header_manage()
 
     @staticmethod
-    def a___________________display_buttons______():
+    def a___________________expand_buttons______():
         pass
 
-    def deplier_tous(self):
+    def expand_menu_show(self):
 
         self.asc.formula_widget_close()
 
-        self.catalog.get_qm_model_selection_list(self.catalog.selected_list)
+        expand_menu = self.hierarchy.expand_menu_creation()
+        expand_menu.exec_(find_global_point(self.ui.expand_all_bt))
 
-        self.ui.hierarchy.blockSignals(True)
-        self.ui.hierarchy.expandAll()
-        self.ui.hierarchy.blockSignals(False)
+    @staticmethod
+    def a___________________collapse_buttons______():
+        pass
 
-        self.catalog.catalog_select()
-        self.asc.buttons_manage()
-
-        self.catalog.change_made = True
-
-        self.catalog.catalog_header_manage()
-
-    def replier_tous(self):
+    def collapse_menu_show(self):
 
         self.asc.formula_widget_close()
 
-        self.ui.hierarchy.blockSignals(True)
-
-        self.ui.hierarchy.collapseAll()
-
-        self.ui.attributes_detail.clear()
-
-        self.ui.hierarchy.clearSelection()
-
-        self.asc.buttons_manage()
-
-        self.catalog.change_made = True
-
-        self.ui.hierarchy.blockSignals(False)
-
-        self.catalog.catalog_header_manage()
-
-    def deplier(self):
-
-        self.ui.hierarchy.blockSignals(True)
-
-        liste_selection = self.catalog.get_filter_selection_list()
-
-        for qmodelindex in liste_selection:
-            self.ui.hierarchy.expandRecursively(qmodelindex)
-
-        self.asc.buttons_manage()
-
-        self.catalog.change_made = True
-
-        self.ui.hierarchy.blockSignals(False)
-
-        self.catalog.catalog_header_manage()
-
-    def replier(self):
-
-        self.ui.hierarchy.blockSignals(True)
-
-        liste_selection = self.catalog.get_filter_selection_list()
-
-        for qmodelindex in liste_selection:
-            self.plier_enfants_action(qmodelindex)
-
-        self.asc.buttons_manage()
-
-        self.catalog.change_made = True
-
-        self.ui.hierarchy.blockSignals(False)
-
-        self.catalog.catalog_header_manage()
-
-    def plier_enfants(self, qmodelindex: QModelIndex):
-
-        self.ui.hierarchy.blockSignals(True)
-        self.plier_enfants_action(qmodelindex)
-        self.ui.hierarchy.blockSignals(False)
-
-    def plier_enfants_action(self, qmodelindex: QModelIndex):
-
-        liste_current = self.ui.hierarchy.selectionModel().selectedRows(col_cat_value)
-
-        self.gestion_replier_action(qmodelindex, liste_current)
-
-        self.asc.buttons_manage()
-
-        self.catalog.change_made = True
-
-    def gestion_replier_action(self, qmodelindex: QModelIndex, liste_current: list):
-
-        if qmodelindex is None:
-            return
-
-        if not qmodelindex.isValid():
-            return
-
-        self.ui.hierarchy.collapse(qmodelindex)
-
-        if qmodelindex in liste_current:
-            invalid = QItemSelection()
-
-            model = qmodelindex.model()
-
-            qmodelindex_parent: QModelIndex = qmodelindex.parent()
-
-            qmodelindex_dbu = model.index(qmodelindex.row(), 0, qmodelindex_parent)
-            qmodelindex_fin = model.index(qmodelindex.row(), model.columnCount() - 1, qmodelindex_parent)
-
-            invalid.select(qmodelindex_dbu, qmodelindex_fin)
-
-            self.ui.hierarchy.selectionModel().select(invalid, QItemSelectionModel.Deselect)
-
-        for row in range(qmodelindex.model().rowCount(qmodelindex)):
-            self.gestion_replier_action(qmodelindex.child(row, 0), liste_current)
+        collapse_menu = self.hierarchy.collapse_menu_creation()
+        collapse_menu.exec_(find_global_point(self.ui.collapse_all_bt))
 
     @staticmethod
     def a___________________move_buttons______():
@@ -1842,7 +1795,7 @@ class ActionBar(QObject):
 
         self.asc.formula_widget_close()
 
-        liste_selection_qstandarditem = self.catalog.get_qs_selection_list()
+        liste_selection_qstandarditem = self.hierarchy.get_qs_selection_list()
 
         if len(liste_selection_qstandarditem) == 0:
             return
@@ -1858,7 +1811,7 @@ class ActionBar(QObject):
             if not isinstance(qs_selected, (Folder, Material, Component, Link)):
                 continue
 
-            qs_parent = self.catalog.get_parent(qs_selected)
+            qs_parent = self.hierarchy.get_parent(qs=qs_selected)
 
             if not isinstance(qs_parent, QStandardItem):
                 continue
@@ -1875,9 +1828,9 @@ class ActionBar(QObject):
 
             else:
 
-                if qs_parent == self.catalog.cat_model.invisibleRootItem():
+                if qs_parent == self.hierarchy.cat_model.invisibleRootItem():
 
-                    child_list = self.catalog.get_root_children_type_list()
+                    child_list = self.hierarchy.get_root_children_type_list()
 
                 else:
 
@@ -1899,7 +1852,7 @@ class ActionBar(QObject):
 
             qs_parent = datas.get("qs_parent", None)
 
-            if qs_parent == self.catalog.cat_model.invisibleRootItem():
+            if qs_parent == self.hierarchy.cat_model.invisibleRootItem():
                 qs_parent_top_index = 0
             else:
                 qs_parent_top_index = qs_parent.get_insertion_index()
@@ -1922,18 +1875,18 @@ class ActionBar(QObject):
 
             row_list.sort()
 
-            for index_list, current_row in enumerate(row_list):
+            for index_list, row_current in enumerate(row_list):
 
-                if current_row == index_list + qs_parent_top_index:
-                    liste_selections_fin.append(qs_parent.child(current_row, 0))
+                if row_current == index_list + qs_parent_top_index:
+                    liste_selections_fin.append(qs_parent.child(row_current, 0))
                     continue
 
-                qs_current = qs_parent.child(current_row, col_cat_value)
+                qs_current = qs_parent.child(row_current, col_cat_value)
 
                 if not isinstance(qs_current, MyQstandardItem):
                     continue
 
-                qs_deleted_list = qs_parent.takeRow(current_row)
+                qs_deleted_list = qs_parent.takeRow(row_current)
 
                 if not isinstance(qs_deleted_list, list):
                     continue
@@ -1941,32 +1894,31 @@ class ActionBar(QObject):
                 if len(qs_deleted_list) != qs_parent.columnCount():
                     continue
 
-                if modifiers == Qt.ControlModifier:
+                if modifiers == Qt.ControlModifier or modifiers == Qt.ShiftModifier:
 
-                    row_futur = index_list + qs_parent_top_index
+                    row_new = index_list + qs_parent_top_index
 
                 else:
 
-                    row_futur = current_row - 1
+                    row_new = row_current - 1
 
-                qs_parent.insertRow(row_futur, qs_deleted_list)
+                qs_parent.insertRow(row_new, qs_deleted_list)
 
-                qs_new = qs_parent.child(row_futur, col_cat_value)
+                qs_current = qs_parent.child(row_new, col_cat_value)
 
-                if not isinstance(qs_new, MyQstandardItem):
+                if not isinstance(qs_current, MyQstandardItem):
                     continue
 
-                liste_selections_fin.append(qs_parent.child(row_futur, col_cat_value))
+                liste_selections_fin.append(qs_parent.child(row_new, col_cat_value))
 
-                self.catalog.undo_move_ele(qs_parent=qs_parent,
-                                           qs_actuel=qs_new,
-                                           row_actuel=current_row,
-                                           row_futur=row_futur)
+                self.catalog.history_move_ele(qs_current=qs_current,
+                                              row_current=row_current,
+                                              row_new=row_new)
 
         if len(liste_selections_fin) == 0:
             return
 
-        self.catalog.catalog_select_action(liste_selections_fin)
+        self.hierarchy.select_list(selected_list=liste_selections_fin)
 
         self.catalog.change_made = True
 
@@ -1974,7 +1926,7 @@ class ActionBar(QObject):
 
         self.asc.formula_widget_close()
 
-        liste_selection_qstandarditem = self.catalog.get_qs_selection_list()
+        liste_selection_qstandarditem = self.hierarchy.get_qs_selection_list()
 
         if len(liste_selection_qstandarditem) == 0:
             return
@@ -1990,7 +1942,7 @@ class ActionBar(QObject):
             if not isinstance(qs_selected, (Folder, Material, Component, Link)):
                 continue
 
-            qs_parent = self.catalog.get_parent(qs_selected)
+            qs_parent = self.hierarchy.get_parent(qs=qs_selected)
 
             if not isinstance(qs_parent, QStandardItem):
                 continue
@@ -2007,9 +1959,9 @@ class ActionBar(QObject):
 
             else:
 
-                if qs_parent == self.catalog.cat_model.invisibleRootItem():
+                if qs_parent == self.hierarchy.cat_model.invisibleRootItem():
 
-                    child_list = self.catalog.get_root_children_type_list()
+                    child_list = self.hierarchy.get_root_children_type_list()
 
                 else:
 
@@ -2053,23 +2005,24 @@ class ActionBar(QObject):
 
             row_list.sort(reverse=True)
 
-            for index_list, current_row in enumerate(row_list):
+            for index_list, row_current in enumerate(row_list):
 
-                qs_current = qs_parent.child(current_row, col_cat_value)
+                qs_current = qs_parent.child(row_current, col_cat_value)
 
                 if not isinstance(qs_current, MyQstandardItem):
                     continue
 
                 parent_row_count = qs_parent.rowCount()
 
-                if modifiers == Qt.ControlModifier and current_row == parent_row_count - 1:
+                if ((modifiers == Qt.ControlModifier or modifiers == Qt.ShiftModifier)
+                        and row_current == parent_row_count - 1):
                     continue
 
-                if current_row == parent_row_count - 1 - index_list:
-                    liste_selections_fin.append(qs_parent.child(current_row, 0))
+                if row_current == parent_row_count - 1 - index_list:
+                    liste_selections_fin.append(qs_parent.child(row_current, 0))
                     continue
 
-                qs_deleted_list = qs_parent.takeRow(current_row)
+                qs_deleted_list = qs_parent.takeRow(row_current)
 
                 if not isinstance(qs_deleted_list, list):
                     continue
@@ -2077,32 +2030,31 @@ class ActionBar(QObject):
                 if len(qs_deleted_list) != qs_parent.columnCount():
                     continue
 
-                if modifiers == Qt.ControlModifier:
+                if modifiers == Qt.ControlModifier or modifiers == Qt.ShiftModifier:
 
-                    row_futur = parent_row_count - index_list - 1
+                    row_new = parent_row_count - index_list - 1
 
                 else:
 
-                    row_futur = current_row + 1
+                    row_new = row_current + 1
 
-                qs_parent.insertRow(row_futur, qs_deleted_list)
+                qs_parent.insertRow(row_new, qs_deleted_list)
 
-                qs_new = qs_parent.child(row_futur, col_cat_value)
+                qs_current = qs_parent.child(row_new, col_cat_value)
 
-                if not isinstance(qs_new, MyQstandardItem):
+                if not isinstance(qs_current, MyQstandardItem):
                     continue
 
-                self.catalog.undo_move_ele(qs_parent=qs_parent,
-                                           qs_actuel=qs_new,
-                                           row_actuel=current_row,
-                                           row_futur=row_futur)
+                self.catalog.history_move_ele(qs_current=qs_current,
+                                              row_current=row_current,
+                                              row_new=row_new)
 
-                liste_selections_fin.append(qs_parent.child(row_futur, col_cat_value))
+                liste_selections_fin.append(qs_parent.child(row_new, col_cat_value))
 
         if len(liste_selections_fin) == 0:
             return
 
-        self.catalog.catalog_select_action(liste_selections_fin)
+        self.hierarchy.select_list(selected_list=liste_selections_fin)
 
         self.catalog.change_made = True
 
@@ -2113,7 +2065,7 @@ class ActionBar(QObject):
     def folder_add(self):
         modifiers = QApplication.keyboardModifiers()
 
-        if modifiers == Qt.ControlModifier:
+        if modifiers == Qt.ControlModifier or modifiers == Qt.ShiftModifier:
 
             move_window_tool(widget_parent=self.asc, widget_current=self.number_widget, always_center=True)
             self.number_widget.personnaliser(folder_code, self.tr("Dossier"))
@@ -2129,7 +2081,7 @@ class ActionBar(QObject):
 
         modifiers = QApplication.keyboardModifiers()
 
-        if modifiers == Qt.ControlModifier:
+        if modifiers == Qt.ControlModifier or modifiers == Qt.ShiftModifier:
 
             move_window_tool(widget_parent=self.asc, widget_current=self.number_widget, always_center=True)
 
@@ -2169,7 +2121,7 @@ class ActionBar(QObject):
 
         modifiers = QApplication.keyboardModifiers()
 
-        if modifiers == Qt.ControlModifier:
+        if modifiers == Qt.ControlModifier or modifiers == Qt.ShiftModifier:
 
             move_window_tool(widget_parent=self.asc, widget_current=self.number_widget, always_center=True)
 
@@ -2186,7 +2138,7 @@ class ActionBar(QObject):
 
         modifiers = QApplication.keyboardModifiers()
 
-        if modifiers == Qt.ControlModifier:
+        if modifiers == Qt.ControlModifier or modifiers == Qt.ShiftModifier:
 
             move_window_tool(widget_parent=self.asc, widget_current=self.number_widget, always_center=True)
 
@@ -2226,7 +2178,7 @@ class ActionBar(QObject):
 
         modifiers = QApplication.keyboardModifiers()
 
-        if modifiers == Qt.ControlModifier:
+        if modifiers == Qt.ControlModifier or modifiers == Qt.ShiftModifier:
 
             move_window_tool(widget_parent=self.asc, widget_current=self.number_widget, always_center=True)
 
@@ -2241,7 +2193,7 @@ class ActionBar(QObject):
 
     def link_add(self):
 
-        qs: MyQstandardItem = self.catalog.get_current_qs()
+        qs: MyQstandardItem = self.hierarchy.get_current_qs()
 
         if qs is None:
             msg(titre=application_title,
@@ -2274,10 +2226,22 @@ class ActionBar(QObject):
 
     def link_menu_show(self):
 
-        search_start = self.catalog.cat_model.index(0, 0)
+        qs_current = self.hierarchy.get_current_qs()
 
-        qm_link_search = self.catalog.cat_model.match(search_start, user_data_type, link_code, -1,
-                                                      Qt.MatchExactly | Qt.MatchRecursive)
+        if isinstance(qs_current, (Component, Link)):
+            qs_current = qs_current.parent()
+
+        if not isinstance(qs_current, Material):
+            return
+
+        material_name = qs_current.text()
+
+        # -------------------
+
+        search_start = self.hierarchy.cat_model.index(0, 0)
+
+        qm_link_search = self.hierarchy.cat_model.match(search_start, user_data_type, link_code, -1,
+                                                        Qt.MatchExactly | Qt.MatchRecursive)
 
         if len(qm_link_search) == 0:
             msg(titre=application_title,
@@ -2286,14 +2250,24 @@ class ActionBar(QObject):
                 icone_avertissement=True)
             return
 
-        liste_ajouter = list()
-        liste_test = list()
+        # -------------------
+
+        qs_list = list()
+        title_list = list()
+
+        forbidden_list = set()
+        self.catalog.link_get_forbidden_list(material_name=material_name, forbidden_list=forbidden_list)
+
+        loop_message = self.tr("Lien Impossible : boucle")
 
         for qm_val in qm_link_search:
 
-            title = qm_val.data()
+            title_original = qm_val.data()
 
-            if not isinstance(title, str):
+            if not isinstance(title_original, str):
+                continue
+
+            if title_original in title_list:
                 continue
 
             qm_parent = qm_val.parent()
@@ -2302,34 +2276,38 @@ class ActionBar(QObject):
 
             if qm_check(qm_parent):
 
-                qm_description = self.catalog.cat_model.index(qm_val.row(), col_cat_desc, qm_parent)
+                qm_description = self.hierarchy.cat_model.index(qm_val.row(), col_cat_desc, qm_parent)
 
                 if qm_check(qm_description):
                     description = qm_description.data()
 
-            if title in liste_test:
-                continue
+            title_list.append(title_original)
 
-            liste_test.append(title)
-
-            if description == "" or description == title:
-                qs_link = QStandardItem(get_icon(link_icon), title)
-                qs_link.setData(title, user_data_type)
+            if description == "" or description == title_original:
+                title_temp = title_original
             else:
+                title_temp = f"{title_original} - {description}"
 
-                qs_link = QStandardItem(get_icon(link_icon), f"{title} - {description}")
-                qs_link.setData(title, user_data_type)
+            if title_original not in forbidden_list:
+                qs_link = QStandardItem(get_icon(link_icon), title_temp)
+            else:
+                qs_link = QStandardItem(get_icon(lock_icon), title_temp)
+                qs_link.setToolTip(loop_message)
+                qs_link.setEnabled(False)
 
+            qs_link.setData(title_original, user_data_type)
             qs_link.setData(description, Qt.UserRole + 2)
 
-            liste_ajouter.append(qs_link)
+            qs_list.append(qs_link)
 
-        if len(liste_test) == 0:
+        if len(title_list) == 0:
             msg(titre=application_title,
                 message=self.tr("Aucun lien n'est présent dans ce catalogue."),
                 type_bouton=QMessageBox.Ok,
                 icone_avertissement=True)
             return
+
+        # -------------------
 
         qm_current = self.link_add_widget.ui.links_list.currentIndex()
         current_text = ""
@@ -2338,7 +2316,7 @@ class ActionBar(QObject):
             current_text = qm_current.data()
 
         self.link_add_widget.link_model.clear()
-        self.link_add_widget.link_model.appendColumn(liste_ajouter)
+        self.link_add_widget.link_model.appendColumn(qs_list)
 
         self.link_add_widget.link_filter.setFilterRegExp(self.link_add_widget.ui.search_bar.text())
 
@@ -2353,6 +2331,8 @@ class ActionBar(QObject):
                 self.link_add_widget.ui.links_list.scrollTo(qm_new,
                                                             QAbstractItemView.PositionAtTop)
 
+        self.link_add_widget.link_filter.sort(0, Qt.AscendingOrder)
+
         move_widget_ss_bouton(self.ui.link_list_bt, self.link_add_widget)
 
         self.link_add_widget.show()
@@ -2365,13 +2345,13 @@ class ActionBar(QObject):
 
         self.asc.formula_widget_close()
 
-        current_qs: MyQstandardItem = self.catalog.get_current_qs()
+        current_qs: MyQstandardItem = self.hierarchy.get_current_qs()
 
         if current_qs is None:
             return
 
         liste_attributs_actuel = current_qs.get_attribute_numbers_list()
-        liste_attributs_actuel.insert(0, attribute_default_base)
+        liste_attributs_actuel.insert(0, attribut_default_obj.current)
 
         self.attributes_widget.attribute_show(current_mod="",
                                               attributes_list=liste_attributs_actuel,
@@ -2415,107 +2395,116 @@ class ActionBar(QObject):
 
     def attributs_ajouter_action(self, liste_numeros: list):
 
-        liste_hierarchie_selection: list = self.catalog.get_filter_selection_list()
+        qm_filter_selection_list: list = self.hierarchy.get_qm_filter_selection_list()
 
-        for hierarchie_qmodelindex in liste_hierarchie_selection:
+        for qm_filter in qm_filter_selection_list:
 
-            hierarchie_qmodelindex: QModelIndex
-
-            type_element = hierarchie_qmodelindex.data(user_data_type)
-
-            if type_element != material_code and type_element != component_code:
+            if not qm_check(qm_filter):
+                print("bar_action -- attributs_ajouter_action --> not qm_check(qm_filter)")
                 continue
 
-            qstandarditem: MyQstandardItem = self.catalog.get_qs_by_qm(
-                hierarchie_qmodelindex)
+            qs_parent = self.hierarchy.get_qs_by_qm(qm=qm_filter)
 
-            if qstandarditem is None:
-                print("onglet_hierarchie -- attributs_coller_action --> qstandarditem is None")
+            if not isinstance(qs_parent, (Material, Component)):
+                print("bar_action -- attributs_ajouter_action --> not isinstance(qs_parent, (Material, Component))")
                 continue
 
-            liste_attributs = qstandarditem.get_attribute_numbers_list()
-            liste_attributs.insert(0, attribute_default_base)
+            attributes_list = qs_parent.get_attribute_numbers_list()
+            attributes_list.insert(0, attribute_default_base)
 
-            dict_comp_l = dict()
-            dict_comp_r = dict()
-            dict_comp_p = dict()
-            # dict_comp_h = dict()
+            attribute_data_layer = list()
+            attribute_data_fill = list()
+            attribute_data_room = list()
 
-            for number in liste_numeros:
+            for number_str in liste_numeros:
 
-                if number in liste_attributs:
+                if number_str in attributes_list:
+                    print("bar_action -- attribute_add_list -- number_str in attributes_list")                                     
                     continue
 
-                index_insertion = qstandarditem.get_attribute_insertion_index(number)
+                index_insertion = qs_parent.get_attribute_insertion_index(number_str)
 
-                if number in attribute_val_default_room:
+                if number_str in attribute_val_default_room:
 
-                    if number == "232":
+                    if number_str == "232":
                         value = self.allplan.traduire_valeur_232(default=True)
 
-                    elif number == "233":
+                    elif number_str == "233":
                         value = self.allplan.traduire_valeur_233(default=True)
 
-                    elif number == "235":
+                    elif number_str == "235":
                         value = self.allplan.traduire_valeur_235(default=True)
 
                     else:
-                        value = attribute_val_default_room[number]
+                        value = attribute_val_default_room[number_str]
 
                 else:
 
-                    datas = self.allplan.attributes_dict.get(number)
+                    attribute_obj = self.allplan.attributes_dict.get(number_str)
 
-                    if isinstance(datas, dict):
+                    if isinstance(attribute_obj, AttributeDatas):
 
-                        value = datas.get("valeur", "")
-
-                        if not isinstance(value, str):
-                            value = ""
+                        value = attribute_obj.value
 
                     else:
 
                         value = ""
 
-                liste_items = self.creation.attribute_line(value=value, number=number)
+                qs_list = self.creation.attribute_line(value=value, number_str=number_str)
 
-                qstandarditem.insertRow(index_insertion, liste_items)
+                qs_parent.insertRow(index_insertion, qs_list)
 
-                if number in attribute_val_default_layer:
-                    dict_comp_l[index_insertion] = liste_items
-                    if number == attribute_val_default_layer_last:
-                        self.catalog.undo_add_attribute(qs_parent=qstandarditem,
-                                                        index_attribut=index_insertion,
-                                                        liste_ele=list(),
-                                                        dict_comp=dict_comp_l,
-                                                        type_attribut=self.tr("Groupe Layer"))
+                qs_value = qs_list[col_cat_value]
 
-                elif number in attribute_val_default_fill:
-                    dict_comp_r[index_insertion] = liste_items
+                if not isinstance(qs_value, Attribute):
+                    continue
 
-                    if number == attribute_val_default_fill_last:
-                        self.catalog.undo_add_attribute(qs_parent=qstandarditem,
-                                                        index_attribut=index_insertion,
-                                                        liste_ele=list(),
-                                                        dict_comp=dict_comp_r,
-                                                        type_attribut=self.tr("Groupe Remplissage"))
+                if number_str in attribute_val_default_layer:
 
-                elif number in attribute_val_default_room:
-                    dict_comp_p[index_insertion] = liste_items
+                    attribute_data_layer.append(AttributeData(guid_current=qs_value.data(user_guid),
+                                                              row_current=index_insertion,
+                                                              qs_list=qs_list))
 
-                    if number == attribute_val_default_room_last:
-                        self.catalog.undo_add_attribute(qs_parent=qstandarditem,
-                                                        index_attribut=index_insertion,
-                                                        liste_ele=list(),
-                                                        dict_comp=dict_comp_p,
-                                                        type_attribut=self.tr("Groupe Pièce"))
+                    if number_str == attribute_val_default_layer_last:
+                        self.catalog.history_add_attribute(guid_parent=qs_value.data(user_guid),
+                                                           attribute_data=attribute_data_layer,
+                                                           parent_name=qs_value.text(),
+                                                           number=self.tr("Groupe Layer"))
+
+                elif number_str in attribute_val_default_fill:
+
+                    attribute_data_fill.append(AttributeData(guid_current=qs_value.data(user_guid),
+                                                             row_current=index_insertion,
+                                                             qs_list=qs_list))
+
+                    if number_str == attribute_val_default_fill_last:
+                        self.catalog.history_add_attribute(guid_parent=qs_value.data(user_guid),
+                                                           attribute_data=attribute_data_fill,
+                                                           parent_name=qs_value.text(),
+                                                           number=self.tr("Groupe Remplissage"))
+
+                elif number_str in attribute_val_default_room:
+
+                    attribute_data_room.append(AttributeData(guid_current=qs_value.data(user_guid),
+                                                             row_current=index_insertion,
+                                                             qs_list=qs_list))
+
+                    if number_str == attribute_val_default_room_last:
+                        self.catalog.history_add_attribute(guid_parent=qs_value.data(user_guid),
+                                                           attribute_data=attribute_data_room,
+                                                           parent_name=qs_value.text(),
+                                                           number=self.tr("Groupe Pièce"))
 
                 else:
 
-                    self.catalog.undo_add_attribute(qs_parent=qstandarditem,
-                                                    index_attribut=index_insertion,
-                                                    liste_ele=liste_items,
-                                                    dict_comp=dict())
+                    attribute_data = [(AttributeData(guid_current=qs_value.data(user_guid),
+                                                     row_current=index_insertion,
+                                                     qs_list=qs_list))]
+
+                    self.catalog.history_add_attribute(guid_parent=qs_value.data(user_guid),
+                                                       attribute_data=attribute_data,
+                                                       parent_name=qs_value.text(),
+                                                       number=f"@{number_str}@")
 
         self.hierarchie_selection_change()
         self.catalog.change_made = True
@@ -2609,7 +2598,7 @@ class ActionBar(QObject):
 
         self.asc.formula_widget_close()
 
-        qstandarditem: Folder = self.catalog.get_current_qs()
+        qstandarditem: Folder = self.hierarchy.get_current_qs()
 
         if qstandarditem is None:
             dict_compatible = {folder_code: self.tr("Enfant")}
@@ -2636,7 +2625,7 @@ class ActionBar(QObject):
             self.hierarchie_coller_menu_creation(clipboard=self.catalog.clipboard_link,
                                                  type_ele=link_code)
 
-        liste_selections_qs = self.catalog.get_qs_selection_list()
+        liste_selections_qs = self.hierarchy.get_qs_selection_list()
 
         if self.catalog.attribut_coller_recherche(liste_selections_qs):
 
@@ -2728,7 +2717,7 @@ class ActionBar(QObject):
         if clipboard_cut.len_datas() == 0:
             return
 
-        self.catalog.hierarchie_couper_coller_action(clipboard_cut)
+        self.catalog.hierarchie_couper_coller_action(clipboard_cut=clipboard_cut)
 
     @staticmethod
     def attribut_coller_recherche_existant(qstandarditem: MyQstandardItem) -> tuple:
@@ -2763,9 +2752,10 @@ class ActionBar(QObject):
 
         self.asc.formula_widget_close()
 
-        qs_selection_list: list = self.catalog.get_qs_selection_list()
+        qs_selection_list: list = self.hierarchy.get_qs_selection_list()
 
         if len(qs_selection_list) == 0:
+            print("bar_action -- lien_ajouter_action -- len(qs_selection_list) == 0")
             return
 
         current_selection = None
@@ -2774,8 +2764,8 @@ class ActionBar(QObject):
 
             qs_current: Material
 
-            if qs_current is None:
-                print("onglet_hierarchie -- lien_ajouter --> qstandarditem is None")
+            if not isinstance(qs_current, (Material, Component, Link)):
+                print("bar_action -- lien_ajouter_action -- not isinstance(qs_current, Material)")
                 continue
 
             elements_compatibles: dict = qs_current.get_add_possibilities(ele_type=link_code)
@@ -2787,53 +2777,63 @@ class ActionBar(QObject):
 
             values_list: list = list(elements_compatibles.values())[0]
 
-            qs_destination, insertion_index = values_list
-
-            if qs_destination is None:
+            if len(values_list) != 2:
+                print("bar_action -- lien_ajouter_action -- len(values_list) != 2")
                 continue
 
-            if qs_destination == self.catalog.cat_model.invisibleRootItem():
+            qs_parent, index_ele = values_list
+
+            if not isinstance(qs_parent, Material) or not isinstance(index_ele, int):
+                print("bar_action -- lien_ajouter_action -- not isinstance(qs_destination, Material)")
                 continue
 
-            qs_destination: MyQstandardItem
+            destination_txt = qs_parent.text()
+
+            if not isinstance(destination_txt, str):
+                print("bar_action -- lien_ajouter_action -- not isinstance(destination_txt, str)")
+                continue
+
+            destination_txt = destination_txt.upper()
 
             for link_data in link_list_add:
 
                 if not isinstance(link_data, list):
+                    print("bar_action -- lien_ajouter_action -- not isinstance(link_data, list)")
                     continue
 
                 if len(link_data) != 2:
+                    print("bar_action -- lien_ajouter_action -- len(link_data) != 2")
                     continue
 
                 material_name, description = link_data
 
                 if not isinstance(material_name, str):
+                    print("bar_action -- lien_ajouter_action -- not isinstance(material_name, str)")
                     continue
 
                 if not isinstance(description, str):
-                    description = ""
+                    print("bar_action -- lien_ajouter_action -- not isinstance(material_name, str)")
+                    continue
 
-                qs_list = self.creation.link_line(value=material_name, description=description)
+                liste_ele = self.creation.link_line(value=material_name, description=description)
 
-                qs_val: MyQstandardItem = qs_list[0]
+                qs_current: MyQstandardItem = liste_ele[col_cat_value]
 
-                qs_destination.insertRow(insertion_index, qs_list)
+                qs_parent.insertRow(index_ele, liste_ele)
 
-                current_selection = qs_val
+                current_selection = qs_current
 
                 link_list.append(material_name)
 
-                destination_txt = qs_destination.text()
-
-                if destination_txt is None:
-                    continue
-
-                material_with_link_list.append(destination_txt.upper())
+                if destination_txt not in material_with_link_list:
+                    material_with_link_list.append(destination_txt)
 
                 self.catalog.material_refresh_look(material_name=material_name)
 
+                self.catalog.history_add_ele(qs_current=qs_current)
+
         if current_selection is not None:
-            self.catalog.catalog_select_action([current_selection])
+            self.hierarchy.select_list(selected_list=[current_selection])
 
         self.catalog.change_made = True
 
@@ -2848,7 +2848,7 @@ class ActionBar(QObject):
         if self.ui.attributes_detail.count() == 0:
             return
 
-        liste_hierarchie_selection: list = self.catalog.get_filter_selection_list()
+        liste_hierarchie_selection: list = self.hierarchy.get_qm_filter_selection_list()
 
         if len(liste_hierarchie_selection) != 1:
             return
@@ -2862,8 +2862,7 @@ class ActionBar(QObject):
         if type_onglet != material_code and type_onglet != component_code:
             return
 
-        qstandarditem: MyQstandardItem = self.catalog.get_qs_by_qm(
-            hierarchie_qmodelindex)
+        qstandarditem: MyQstandardItem = self.hierarchy.get_qs_by_qm(qm=hierarchie_qmodelindex)
 
         if qstandarditem is None:
             print("onglet_hierarchie -- attributs_coller_action --> qstandarditem is None")
@@ -2874,8 +2873,8 @@ class ActionBar(QObject):
         if len(liste_attributs) == 0:
             return
 
-        if attribute_default_base in liste_attributs:
-            liste_attributs.remove(attribute_default_base)
+        if attribut_default_obj.current in liste_attributs:
+            liste_attributs.remove(attribut_default_obj.current)
 
         for numero in attribute_val_default_layer:
 
@@ -2947,10 +2946,14 @@ class ActionBar(QObject):
 
         self.asc.formula_widget_close()
 
-        current_qs = self.catalog.get_current_qs()
+        if self.library_widget.isVisible():
+            self.library_widget.raise_()
+            return
+
+        current_qs = self.hierarchy.get_current_qs()
 
         if current_qs is None:
-            current_qs = self.catalog.cat_model.invisibleRootItem()
+            current_qs = self.hierarchy.cat_model.invisibleRootItem()
 
         self.library_widget.show_library(current_qs=current_qs,
                                          current_parent=self.asc)
@@ -2965,10 +2968,10 @@ class ActionBar(QObject):
         elif not self.library_widget.isActiveWindow():
             self.library_widget.raise_()
 
-        current_qs = self.catalog.get_current_qs()
+        current_qs = self.hierarchy.get_current_qs()
 
         if current_qs is None:
-            current_qs = self.catalog.cat_model.invisibleRootItem()
+            current_qs = self.hierarchy.cat_model.invisibleRootItem()
 
         self.library_widget.hierarchy_selection_changed(new_qs=current_qs)
 
@@ -3150,7 +3153,7 @@ class ActionBar(QObject):
         if ele_type == "":
             ele_type = material_code
 
-        qs_selection_list: list = self.catalog.get_qs_selection_list()
+        qs_selection_list: list = self.hierarchy.get_qs_selection_list()
 
         if len(qs_selection_list) == 0:
 
@@ -3158,7 +3161,7 @@ class ActionBar(QObject):
                 return
 
             current_qstandarditem = None
-            liste_titre_actuel = self.catalog.get_root_children_name(upper=True)
+            liste_titre_actuel = self.hierarchy.get_root_children_name(upper=True)
 
             for title in titles_list:
 
@@ -3188,14 +3191,14 @@ class ActionBar(QObject):
 
                 liste_ajouter = self.creation.folder_line(value=nouveau_nom, description=description)
 
-                self.catalog.cat_model.invisibleRootItem().appendRow(liste_ajouter)
+                self.hierarchy.cat_model.invisibleRootItem().appendRow(liste_ajouter)
 
-                qs_val: MyQstandardItem = liste_ajouter[0]
+                qs_val: MyQstandardItem = liste_ajouter[col_cat_value]
 
                 current_qstandarditem = qs_val
 
             if current_qstandarditem is not None:
-                self.catalog.catalog_select_action([current_qstandarditem])
+                self.hierarchy.select_list(selected_list=[current_qstandarditem])
 
             return
 
@@ -3227,7 +3230,7 @@ class ActionBar(QObject):
                     if ele_type != folder_code:
                         continue
 
-                    qs_destination = self.catalog.cat_model.invisibleRootItem()
+                    qs_destination = self.hierarchy.cat_model.invisibleRootItem()
 
             elif elements_compatibles_count == 2:
 
@@ -3235,12 +3238,12 @@ class ActionBar(QObject):
                 liste_valeurs_parent: list = elements_compatibles[self.tr("Frère")]
                 qstandarditem_1, row_parent = liste_valeurs_parent
 
-                if qstandarditem_1 is None or qstandarditem_1 == self.catalog.cat_model.invisibleRootItem():
+                if qstandarditem_1 is None or qstandarditem_1 == self.hierarchy.cat_model.invisibleRootItem():
 
                     if ele_type != folder_code:
                         continue
 
-                    qstandarditem_1 = self.catalog.cat_model.invisibleRootItem()
+                    qstandarditem_1 = self.hierarchy.cat_model.invisibleRootItem()
                     parent_texte = self.tr("Racine de la hiérarchie")
 
                 else:
@@ -3306,11 +3309,11 @@ class ActionBar(QObject):
                 if not isinstance(title, str):
                     continue
 
-                if qs_destination == self.catalog.cat_model.invisibleRootItem():
+                if qs_destination == self.hierarchy.cat_model.invisibleRootItem():
 
                     if ele_type == folder_code:
 
-                        liste_titre_actuel = self.catalog.get_root_children_name()
+                        liste_titre_actuel = self.hierarchy.get_root_children_name()
 
                     else:
                         continue
@@ -3362,15 +3365,18 @@ class ActionBar(QObject):
                     attributes_list = self.models_widget.creation_liste_attributs(tab_name)
 
                     for number in attributes_list:
-                        qs_attribute_list = self.creation.attribute_line(value="", number=number, use_default=True)
+                        qs_attribute_list = self.creation.attribute_line(value="", number_str=number, use_default=True)
                         qs_val.appendRow(qs_attribute_list)
 
                 qs_destination.insertRow(insertion_index + repetition, liste_ajouter)
 
-                self.catalog.undo_add_ele(qs_parent=qs_destination,
-                                          qs_actuel=liste_ajouter[0],
-                                          index_ele=insertion_index + repetition,
-                                          liste_ele=liste_ajouter)
+                qs_current = liste_ajouter[col_cat_value]
+
+                if not isinstance(qs_current, MyQstandardItem):
+                    print("bar_action -- item_ajouter_action -- not isinstance(qs_current, MyQstandardItem)")
+                    continue
+
+                self.catalog.history_add_ele(qs_current=qs_current)
 
                 repetition += 1
 
@@ -3381,10 +3387,10 @@ class ActionBar(QObject):
                 current_selection = qs_val
 
         if len(expanded_list) != 0:
-            self.catalog.catalog_expand_action(expanded_list)
+            self.hierarchy.expand_list(expanded_list)
 
         if current_selection is not None:
-            self.catalog.catalog_select_action([current_selection])
+            self.hierarchy.select_list(selected_list=[current_selection])
 
         self.catalog.change_made = True
 
@@ -3392,7 +3398,7 @@ class ActionBar(QObject):
     def a___________________event______():
         pass
 
-    def eventFilter(self, obj: QWidget, event: QEvent):
+    def eventFilter(self, obj: QWidget, event: QEvent.MouseButtonRelease):
 
         if event.type() != QEvent.MouseButtonRelease:
             return super().eventFilter(obj, event)

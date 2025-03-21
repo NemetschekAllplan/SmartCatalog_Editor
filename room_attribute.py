@@ -1,13 +1,13 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*
-
+from history_manage import AttributeModifyData
 from tools import settings_read, settings_save, move_window_tool, get_room_defaut_dict
 from ui_attribute_room import Ui_AttributeRoom
 from room import *
 
 
 class AttributeRoom(QWidget):
-    attribute_changed_signal = pyqtSignal(QStandardItem, str, str, str, str, str, dict, str)
+    attribute_changed_signal = pyqtSignal(str, list, str, dict, str)
 
     def __init__(self, asc):
         super().__init__()
@@ -33,6 +33,7 @@ class AttributeRoom(QWidget):
         # Favoris
         # ---------------------------------------
         a = self.tr("Nom favoris")
+
         self.liste_titres = [f'{a} : ',
                              f"{self.ui.titre_231.text()} (231) : ",
                              f"{self.ui.titre_235.text()} (235) : ",
@@ -367,99 +368,173 @@ class AttributeRoom(QWidget):
     def a___________________favoris_chargement______():
         pass
 
-    def chargement_favoris(self, valeur_231: str, valeur_235: str, valeur_232: str, valeur_266: str,
-                           valeur_233: str, valeur_264: str):
+    def chargement_favoris(self, value_new_231: str, value_new_235: str, value_new_232: str, value_new_266: str,
+                           value_new_233: str, value_new_264: str):
 
         print("widget_type_piece -- favoris chargement")
 
         if not self.ui.valeur_fav.isVisible():
             return
 
-        valeur_originale = self.qs_231_val.text()
-        index_original = self.qs_231_ind.text()
+        # -------------
 
-        self.set_current_texte(self.ui.valeur_231, valeur_231, True, self.ui.numero_231)
+        qs_parent = self.qs_231_val.parent()
+
+        if not isinstance(qs_parent, QStandardItem):
+            print("room_attribute -- chargement_favoris -- not isinstance(qs_parent, QStandardItem)")
+            return
+
+        # -------------
+
+        guid_parent = qs_parent.data(user_guid)
+
+        if not isinstance(guid_parent, str):
+            print("room_attribute -- chargement_favoris -- not isinstance(guid_parent, str)")
+            return
+
+        # -------------
+
+        parent_name = qs_parent.text()
+
+        if not isinstance(parent_name, str):
+            print("room_attribute -- chargement_favoris -- not isinstance(parent_name, str)")
+            return
+
+        # -------------
+
+        attribute_data = list()
+        value_dict = dict()
+
+        # ------------- 231
+
+        value_current_231 = self.qs_231_val.text()
+        value_index_current_231 = self.qs_231_ind.text()
+
+        self.set_current_texte(self.ui.valeur_231, value_new_231, True, self.ui.numero_231)
 
         self.mise_a_jour_combo(qs_val=self.qs_231_val,
                                qs_ind=self.qs_231_ind,
-                               numero="231",
+                               number_current="231",
                                widget_combo=self.ui.valeur_231,
                                widget_index=self.ui.numero_231,
                                maj=False)
 
-        self.set_current_texte(self.ui.valeur_235, valeur_235, True, self.ui.numero_235)
+        if value_current_231 != value_new_231:
 
-        dict_comp = {"235": {"numero": "235",
-                             "valeur_originale": self.qs_235_val.text(),
-                             "nouveau_texte": self.ui.valeur_235.currentText(),
-                             "ancien_index": self.qs_235_ind.text(),
-                             "nouvel_index": self.ui.numero_235.text()}}
+            attribute_data.append(AttributeModifyData(number_current="231",
+                                                      value_new=value_current_231,
+                                                      value_index_new=value_index_current_231))
+
+            value_dict["231"] = [value_current_231, value_new_231]
+
+        # ------------- 235
+
+        value_current_235 = self.qs_235_val.text()
+        value_index_current_235 = self.qs_235_ind.text()
+
+        self.set_current_texte(self.ui.valeur_235, value_new_235, True, self.ui.numero_235)
 
         self.mise_a_jour_combo(qs_val=self.qs_235_val,
                                qs_ind=self.qs_235_ind,
-                               numero="235",
+                               number_current="235",
                                widget_combo=self.ui.valeur_235,
                                widget_index=self.ui.numero_235,
                                maj=False)
 
-        self.set_current_texte(self.ui.valeur_232, valeur_232, True, self.ui.valeur_232)
+        if value_current_235 != value_new_235:
 
-        dict_comp["232"] = {"numero": "232",
-                            "valeur_originale": self.qs_232_val.text(),
-                            "nouveau_texte": self.ui.valeur_232.currentText(),
-                            "ancien_index": self.qs_232_ind.text(),
-                            "nouvel_index": self.ui.numero_232.text()}
+            attribute_data.append(AttributeModifyData(number_current="235",
+                                                      value_new=value_current_235,
+                                                      value_index_new=value_index_current_235))
+
+            value_dict["235"] = [value_current_235, value_new_235]
+
+        # ------------- 232
+
+        value_current_232 = self.qs_232_val.text()
+        value_index_current_232 = self.qs_232_ind.text()
+
+        self.set_current_texte(self.ui.valeur_232, value_new_232, True, self.ui.valeur_232)
 
         self.mise_a_jour_combo(qs_val=self.qs_232_val,
                                qs_ind=self.qs_232_ind,
-                               numero="232",
+                               number_current="232",
                                widget_combo=self.ui.valeur_232,
                                widget_index=self.ui.numero_232,
                                maj=False)
 
-        self.ui.valeur_266.setText(valeur_266)
+        if value_current_232 != value_new_232:
 
-        dict_comp["266"] = {"numero": "266",
-                            "valeur_originale": self.qs_266.text(),
-                            "nouveau_texte": self.ui.valeur_266.text(),
-                            "ancien_index": "-1",
-                            "nouvel_index": "-1"}
+            attribute_data.append(AttributeModifyData(number_current="232",
+                                                      value_new=value_current_232,
+                                                      value_index_new=value_index_current_232))
+
+            value_dict["232"] = [value_current_232, value_new_232]
+
+        # ------------- 266
+
+        value_current_266 = self.qs_266.text()
+
+        self.ui.valeur_266.setText(value_new_266)
 
         self.mise_a_jour_lineedit(qs_val=self.qs_266,
-                                  numero="266",
+                                  number_current="266",
                                   widget_lineedit=self.ui.valeur_266,
                                   maj=False)
 
-        self.set_current_texte(self.ui.valeur_233, valeur_233, True, self.ui.valeur_233)
+        self.set_current_texte(self.ui.valeur_233, value_new_233, True, self.ui.valeur_233)
 
-        dict_comp["233"] = {"numero": "233",
-                            "valeur_originale": self.qs_233_val.text(),
-                            "nouveau_texte": self.ui.valeur_233.currentText(),
-                            "ancien_index": self.qs_233_ind.text(),
-                            "nouvel_index": self.ui.numero_233.text()}
+        if value_current_266 != value_new_266:
+
+            attribute_data.append(AttributeModifyData(number_current="266",
+                                                      value_new=value_current_266))
+
+            value_dict["266"] = [value_current_266, value_new_266]
+
+        # ------------- 233
+
+        value_current_233 = self.qs_233_val.text()
+        value_index_current_233 = self.qs_233_ind.text()
 
         self.mise_a_jour_combo(qs_val=self.qs_233_val,
                                qs_ind=self.qs_233_ind,
-                               numero="233",
+                               number_current="233",
                                widget_combo=self.ui.valeur_233,
                                widget_index=self.ui.numero_233,
                                maj=False)
 
-        self.ui.valeur_264.setText(valeur_264)
+        if value_current_233 != value_new_233:
 
-        dict_comp["264"] = {"numero": "264",
-                            "valeur_originale": self.qs_264.text(),
-                            "nouveau_texte": self.ui.valeur_264.text(),
-                            "ancien_index": "-1",
-                            "nouvel_index": "-1"}
+            attribute_data.append(AttributeModifyData(number_current="233",
+                                                      value_new=value_current_233,
+                                                      value_index_new=value_index_current_233))
+
+            value_dict["233"] = [value_current_233, value_new_233]
+
+        # ------------- 264
+
+        value_current_264 = self.qs_264.text()
+
+        self.ui.valeur_264.setText(value_new_264)
 
         self.mise_a_jour_lineedit(qs_val=self.qs_264,
-                                  numero="264",
+                                  number_current="264",
                                   widget_lineedit=self.ui.valeur_264,
                                   maj=False)
 
-        self.attribute_changed_signal.emit(self.qs_231_val, "231", valeur_originale, valeur_231, index_original,
-                                           self.ui.numero_231.text(), dict_comp, "Pièce")
+        if value_current_264 != value_new_264:
+
+            attribute_data.append(AttributeModifyData(number_current="264",
+                                                      value_new=value_current_264))
+
+            value_dict["264"] = [value_current_264, value_new_264]
+
+        # ------------- signal
+
+        if len(value_dict) != 0:
+
+            self.attribute_changed_signal.emit(guid_parent, attribute_data, parent_name, value_dict,
+                                               self.tr("Groupe Pièce"))
 
     def recherche_favoris_auto(self):
 
@@ -798,7 +873,7 @@ class AttributeRoom(QWidget):
         self.ui.valeur_266.setText(valeur)
 
         self.mise_a_jour_lineedit(qs_val=self.qs_266,
-                                  numero="266",
+                                  number_current="266",
                                   widget_lineedit=self.ui.valeur_266)
 
         self.recherche_favoris_auto()
@@ -845,7 +920,7 @@ class AttributeRoom(QWidget):
         self.ui.valeur_264.setText(valeur)
 
         self.mise_a_jour_lineedit(qs_val=self.qs_264,
-                                  numero="264",
+                                  number_current="264",
                                   widget_lineedit=self.ui.valeur_264)
 
         self.recherche_favoris_auto()
@@ -880,7 +955,7 @@ class AttributeRoom(QWidget):
 
             self.mise_a_jour_combo(qs_val=qs_val,
                                    qs_ind=qs_ind,
-                                   numero=numero,
+                                   number_current=numero,
                                    widget_combo=widget_combo,
                                    widget_index=widget_index)
 
@@ -906,49 +981,110 @@ class AttributeRoom(QWidget):
 
         self.mise_a_jour_combo(qs_val=qs_val,
                                qs_ind=qs_ind,
-                               numero=numero,
+                               number_current=numero,
                                widget_combo=widget_combo,
                                widget_index=widget_index)
 
         self.recherche_favoris_auto()
 
     def mise_a_jour_combo(self, qs_val: QStandardItem, qs_ind: QStandardItem,
-                          numero: str, widget_combo: QComboBox, widget_index: QLabel, maj=True):
+                          number_current: str, widget_combo: QComboBox, widget_index: QLabel, maj=True):
 
-        valeur_originale = qs_val.text()
-        nouveau_texte = widget_combo.currentText()
+        value_current = qs_val.text()
+        value_new = widget_combo.currentText()
 
-        ancien_index = qs_ind.text()
-        nouvel_index = widget_index.text()
+        value_index_current = qs_ind.text()
+        value_index_new = widget_index.text()
 
-        if valeur_originale == nouveau_texte and ancien_index == nouvel_index:
+        if value_current == value_new and value_index_current == value_index_new:
             return
 
         if not widget_combo.isVisible():
             return
 
-        qs_val.setText(nouveau_texte)
-        qs_ind.setText(nouvel_index)
+        qs_val.setText(value_new)
+        qs_ind.setText(value_index_new)
 
-        if maj:
-            self.attribute_changed_signal.emit(qs_val, numero, valeur_originale, nouveau_texte, ancien_index,
-                                               nouvel_index, dict(), "")
+        if not maj:
+            return
 
-    def mise_a_jour_lineedit(self, qs_val: QStandardItem, numero: str, widget_lineedit: QLineEdit, maj=True):
+        qs_parent = self.qs_231_val.parent()
 
-        valeur_originale = qs_val.text()
-        nouveau_texte = widget_lineedit.text()
+        if not isinstance(qs_parent, QStandardItem):
+            print("room_attribute -- mise_a_jour_combo -- not isinstance(qs_parent, QStandardItem)")
+            return
 
-        if valeur_originale == nouveau_texte:
+        # -------------
+
+        guid_parent = qs_parent.data(user_guid)
+
+        if not isinstance(guid_parent, str):
+            print("room_attribute -- mise_a_jour_combo -- not isinstance(guid_parent, str)")
+            return
+
+        # -------------
+
+        parent_name = qs_parent.text()
+
+        if not isinstance(parent_name, str):
+            print("room_attribute -- mise_a_jour_combo -- not isinstance(parent_name, str)")
+            return
+
+        # -------------
+
+        attribute_data = [AttributeModifyData(number_current=number_current,
+                                              value_new=value_current,
+                                              value_index_new=value_index_current)]
+
+        value_dict = {number_current: [value_current, value_new]}
+
+        self.attribute_changed_signal.emit(guid_parent, attribute_data, parent_name, value_dict, "")
+
+    def mise_a_jour_lineedit(self, qs_val: QStandardItem, number_current: str, widget_lineedit: QLineEdit, maj=True):
+
+        value_current = qs_val.text()
+        value_new = widget_lineedit.text()
+
+        if value_current == value_new:
             return
 
         if not widget_lineedit.isVisible():
             return
 
-        qs_val.setText(nouveau_texte)
+        qs_val.setText(value_new)
 
-        if maj:
-            self.attribute_changed_signal.emit(qs_val, numero, valeur_originale, nouveau_texte, "-1", "-1", dict(), "")
+        if not maj:
+            return
+
+        qs_parent = self.qs_231_val.parent()
+
+        if not isinstance(qs_parent, QStandardItem):
+            print("room_attribute -- mise_a_jour_lineedit -- not isinstance(qs_parent, QStandardItem)")
+            return
+
+        # -------------
+
+        guid_parent = qs_parent.data(user_guid)
+
+        if not isinstance(guid_parent, str):
+            print("room_attribute -- mise_a_jour_lineedit -- not isinstance(guid_parent, str)")
+            return
+
+        # -------------
+
+        parent_name = qs_parent.text()
+
+        if not isinstance(parent_name, str):
+            print("room_attribute -- mise_a_jour_lineedit -- not isinstance(parent_name, str)")
+            return
+
+        # -------------
+
+        attribute_data = [AttributeModifyData(number_current=number_current, value_new=value_current)]
+
+        value_dict = {number_current: [value_current, value_new]}
+
+        self.attribute_changed_signal.emit(guid_parent, attribute_data, parent_name, value_dict, "")
 
     @staticmethod
     def a___________________ui_annexe______():

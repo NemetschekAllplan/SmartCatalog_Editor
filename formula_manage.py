@@ -124,6 +124,12 @@ class TextFormule(QPlainTextEdit):
 
         formula_current = self.toPlainText()
 
+        if self.allplan is None:
+            return
+
+        if not self.allplan.formula_convert_name:
+            return
+
         formula_format = self.allplan.formula_replace_all_name(formula=formula_current)
 
         if formula_current == formula_format:
@@ -261,7 +267,8 @@ class TextFormule(QPlainTextEdit):
                 super().focusOutEvent(event)
                 return
 
-        self.formula_convert_name_to_number()
+        if self.allplan.formula_convert_name:
+            self.formula_convert_name_to_number()
 
         self.editingFinished.emit()
         super().focusOutEvent(event)
@@ -403,9 +410,28 @@ class WidgetAutocompletion(QWidget):
         else:
             texte_final = f"{debut_txt}{choix}{fin_txt}"
 
-        self.widget.setPlainText(texte_final)
+        # --------
 
         nouvelle_position: int = position_dbu_texte + len(choix)
+
+        # --------
+
+        error_dict = {"_ELSE__IF_ELSE__IF_(": "_ELSE__IF_(",
+                      "_ELSE__ELSE__IF_(": "_ELSE__IF_(",
+                      "_IF_IF_(": "_IF_("}
+
+        for value_error, value_new in error_dict.items():
+
+            if value_error not in texte_final:
+                continue
+
+            texte_final = texte_final.replace(value_error, value_new)
+
+            nouvelle_position -= len(value_error) - len(value_new)
+
+        # --------
+
+        self.widget.setPlainText(texte_final)
 
         # print(f"Autocompletion -- ajouter_element -- replacement cursor "
         #       f" pos :{self.position_cursor} -- len_pos :  {self.len_position} -- len(choix) : {len(choix)} -- "

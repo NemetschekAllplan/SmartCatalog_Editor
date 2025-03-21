@@ -11,9 +11,10 @@ from ui_attribute_formula import Ui_AttributeFormula
 
 class AttributeFormula(QWidget):
     formula_changed = pyqtSignal()
-    attribute_changed_signal = pyqtSignal(QStandardItem, str, str, str)
+    formula_corrected = pyqtSignal(Attribute, str, str)
+    attribute_changed_signal = pyqtSignal(str, list, str, dict)
 
-    def __init__(self, asc, qs_value: MyQstandardItem, attribute_datas: dict, listwidgetitem: QListWidgetItem):
+    def __init__(self, asc, qs_value: MyQstandardItem, attribute_obj: AttributeDatas, listwidgetitem: QListWidgetItem):
         super().__init__()
 
         # ---------------------------------------
@@ -30,14 +31,14 @@ class AttributeFormula(QWidget):
 
         # ----------------------------------
 
-        if isinstance(attribute_datas, dict):
+        if isinstance(attribute_obj, AttributeDatas):
 
-            self.ui.num_attrib.setText(attribute_datas.get(code_attr_number, ""))
+            self.ui.num_attrib.setText(attribute_obj.number)
 
-            self.ui.name_attrib.setText(attribute_datas.get(code_attr_name, ""))
-            self.ui.name_attrib.setToolTip(attribute_datas.get(code_attr_tooltips, ""))
+            self.ui.name_attrib.setText(attribute_obj.name)
+            self.ui.name_attrib.setToolTip(attribute_obj.tooltips)
 
-            self.attrib_option = attribute_datas.get(code_attr_option, code_attr_str)
+            self.attrib_option = attribute_obj.option
 
         else:
 
@@ -59,6 +60,8 @@ class AttributeFormula(QWidget):
         self.adjust_height_action = False
 
         self.listwidgetitem = listwidgetitem
+
+        self.search_error_active = False
 
         # ---------------------------------------
         # CREATEUR DE FORMULES
@@ -127,7 +130,9 @@ class AttributeFormula(QWidget):
     def a___________________formula_loading______():
         pass
 
-    def chargement(self):
+    def chargement(self, search_error_active: bool):
+
+        self.search_error_active = search_error_active
 
         set_appearance_number(self.ui.num_attrib)
         set_appearence_type(self.ui.type_attrib, self.attrib_option)
@@ -198,9 +203,13 @@ class AttributeFormula(QWidget):
             message_futur = ""
 
         if message_actuel != message_futur and isinstance(self.qs_value, Attribute):
+
             self.qs_value.setData(message_futur, user_formule_ok)
 
-        if message_futur == "":
+        if message_futur == "" and self.search_error_active:
+
+            self.formula_corrected.emit(self.qs_value, self.ui.num_attrib.text(), self.ui.value_attrib.toPlainText())
+
             self.mise_a_jour()
 
             self.formula_changed.emit()
@@ -226,15 +235,53 @@ class AttributeFormula(QWidget):
 
     def mise_a_jour(self):
 
-        valeur_originale = self.qs_value.text()
-        nouveau_texte = self.ui.value_attrib.toPlainText()
+        value_current = self.qs_value.text()
+        value_new = self.ui.value_attrib.toPlainText()
 
-        if valeur_originale == nouveau_texte:
+        if value_current == value_new:
             return
 
-        self.qs_value.setText(nouveau_texte)
+        # -------------
 
-        self.attribute_changed_signal.emit(self.qs_value, self.ui.num_attrib.text(), valeur_originale, nouveau_texte)
+        self.qs_value.setText(value_new)
+
+        # -------------
+
+        number_current = self.ui.num_attrib.text()
+
+        value_dict = {number_current: [value_current, value_new]}
+
+        # -------------
+
+        qs_parent = self.qs_value.parent()
+
+        if not isinstance(qs_parent, QStandardItem):
+            print("formula_attribute -- mise_a_jour -- not isinstance(qs_parent, QStandardItem)")
+            return
+
+        # -------------
+
+        guid_parent = qs_parent.data(user_guid)
+
+        if not isinstance(guid_parent, str):
+            print("formula_attribute -- mise_a_jour -- not isinstance(guid_parent, str)")
+            return
+
+        # -------------
+
+        parent_name = qs_parent.text()
+
+        if not isinstance(parent_name, str):
+            print("formula_attribute -- mise_a_jour -- not isinstance(parent_name, str)")
+            return
+
+        # -------------
+
+        data = AttributeModifyData(number_current=number_current, value_new=value_current)
+
+        attribute_data = [data]
+
+        self.attribute_changed_signal.emit(guid_parent, attribute_data, parent_name, value_dict)
 
     @staticmethod
     def a___________________lineedit_height______():
@@ -361,7 +408,7 @@ class AttributeFormula(QWidget):
 
         modifiers = QApplication.keyboardModifiers()
 
-        if modifiers == Qt.ControlModifier:
+        if modifiers == Qt.ControlModifier or modifiers == Qt.ShiftModifier:
             self.afficher_widget_favoris()
             return
 
@@ -403,16 +450,6 @@ class AttributeFormula(QWidget):
                 continue
 
             family_formulas: dict = family_datas.get("formulas", dict())
-
-            if len(family_formulas) == 0:
-
-                family_formulas: dict = family_datas.get("Métré net selon unité", dict())
-
-                if len(family_formulas) == 0:
-                    liste_qmenu.append(item)
-                    continue
-
-                family_formulas = {"Métré net selon unité": "@99@"}
 
             for formula_name, formula in family_formulas.items():
                 item.add_action(qicon=get_icon(family_icon),

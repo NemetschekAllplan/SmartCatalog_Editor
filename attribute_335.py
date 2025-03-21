@@ -1,21 +1,21 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*
+import os.path
 
-import locale
-
-from allplan_manage import AllplanDatas, AllplanPaths
-from hierarchy_qs import *
-from tools import afficher_message as msg
+from allplan_manage import AllplanDatas, AllplanPaths, AttributeDatas
+from hierarchy import MyQstandardItem
+from history_manage import AttributeModifyData
+from main_datas import *
 from tools import MyContextMenu, set_appareance_button, find_global_point
-from tools import get_lastest_used, get_most_used, move_widget_ss_bouton
+from tools import afficher_message as msg
+from tools import get_lastest_used, get_most_used, move_widget_ss_bouton, browser_file
 from ui_attribute_335 import Ui_Attribute335
-from browser import browser_file
 
 
 class Attribute335(QWidget):
-    attribute_changed_signal = pyqtSignal(QStandardItem, str, str, str)
+    attribute_changed_signal = pyqtSignal(str, list, str, dict)
 
-    def __init__(self, asc, qs_value: MyQstandardItem, attribute_datas: dict):
+    def __init__(self, asc, qs_value: MyQstandardItem, attribute_obj: AttributeDatas):
         super().__init__()
 
         # -----------------------------------------------
@@ -30,11 +30,11 @@ class Attribute335(QWidget):
 
         # ----------------------------------
 
-        if isinstance(attribute_datas, dict):
-            self.ui.num_attrib.setText(attribute_datas.get(code_attr_number, ""))
+        if isinstance(attribute_obj, AttributeDatas):
+            self.ui.num_attrib.setText(attribute_obj.number)
 
-            self.ui.name_attrib.setText(attribute_datas.get(code_attr_name, ""))
-            self.ui.name_attrib.setToolTip(attribute_datas.get(code_attr_tooltips, ""))
+            self.ui.name_attrib.setText(attribute_obj.name)
+            self.ui.name_attrib.setToolTip(attribute_obj.tooltips)
 
         # -----------------------------------------------
         # Variables
@@ -117,15 +117,51 @@ class Attribute335(QWidget):
 
     def surface_update(self):
 
-        valeur_originale = self.qs_value.text()
-        nouveau_texte = self.ui.value_attrib.text()
+        value_current = self.qs_value.text()
+        value_new = self.ui.value_attrib.text()
 
-        if valeur_originale == nouveau_texte:
+        if value_current == value_new:
             return
 
-        self.qs_value.setText(nouveau_texte)
+        self.qs_value.setText(value_new)
 
-        self.attribute_changed_signal.emit(self.qs_value, self.ui.num_attrib.text(), valeur_originale, nouveau_texte)
+        # -------------
+
+        number_current = self.ui.num_attrib.text()
+
+        value_dict = {number_current: [value_current, value_new]}
+
+        # -------------
+
+        qs_parent = self.qs_value.parent()
+
+        if not isinstance(qs_parent, QStandardItem):
+            print("attribute_335 -- surface_update -- not isinstance(qs_parent, QStandardItem)")
+            return
+
+        # -------------
+
+        guid_parent = qs_parent.data(user_guid)
+
+        if not isinstance(guid_parent, str):
+            print("attribute_335 -- surface_update -- not isinstance(guid_parent, str)")
+            return
+
+        # -------------
+
+        parent_name = qs_parent.text()
+
+        if not isinstance(parent_name, str):
+            print("attribute_335 -- surface_update -- not isinstance(parent_name, str)")
+            return
+
+        # -------------
+
+        data = AttributeModifyData(number_current=number_current, value_new=value_current)
+
+        attribute_data = [data]
+
+        self.attribute_changed_signal.emit(guid_parent, attribute_data, parent_name, value_dict)
 
     @staticmethod
     def a___________________verification______():
@@ -302,9 +338,17 @@ class Attribute335(QWidget):
 
         if isinstance(self.allplan.allplan_paths, AllplanPaths):
 
-            shortcuts_list = [self.allplan.allplan_paths.std_cat_path,
+            shortcuts_list = [self.allplan.allplan_paths.std_design_path,
                               self.allplan.allplan_paths.prj_path,
                               self.allplan.allplan_paths.tmp_path]
+
+            if self.allplan.catalog_user_path != self.allplan.allplan_paths.std_design_path:
+
+                design = f"{self.allplan.catalog_user_path}Design\\"
+
+                if os.path.exists(design):
+                    shortcuts_list.append(design)
+
         else:
 
             shortcuts_list = list()
@@ -347,6 +391,8 @@ class Attribute335(QWidget):
 
     def get_surface_path(self, surface_path: str) -> str:
 
+        surface_path = surface_path.replace("\\\\", "\\")
+
         prj_path = f"{self.design_prj_path}{surface_path}"
         std_path = f"{self.design_std_path}{surface_path}"
 
@@ -355,8 +401,6 @@ class Attribute335(QWidget):
 
         if not surface_path.endswith(".surf"):
             return ""
-
-        surface_path = surface_path.replace("\\\\", "\\")
 
         if os.path.exists(surface_path):
             return surface_path
@@ -471,7 +515,8 @@ def picture_loading(surface_path: str) -> QPixmap:
         return QPixmap()
 
     try:
-        image = QImage(surface_path)
+        image = QImage(surface_path, "TIFF")
+
         image = image.convertToFormat(QImage.Format_RGBA8888)
         qpixmap = QPixmap.fromImage(image)
 

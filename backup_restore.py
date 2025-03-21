@@ -106,9 +106,9 @@ class BackupRestore(QWidget):
             date_complet_modif = datetime.fromtimestamp(seconds)
 
             if self.langue == "FR":
-                modif_date = date_complet_modif.strftime("%d-%m-%Y à %H:%M:%S")
+                modif_date = date_complet_modif.strftime("%d-%m-%Y - %H:%M:%S")
             else:
-                modif_date = date_complet_modif.strftime("%m-%d-%Y à %I:%M:%S %p")
+                modif_date = date_complet_modif.strftime("%m-%d-%Y - %I:%M:%S %p")
 
             if "-" in filename:
                 try:

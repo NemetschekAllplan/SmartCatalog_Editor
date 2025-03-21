@@ -1,11 +1,13 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*
+import re
 
 from PyQt5.Qt import *
 
 from catalog_manage import CatalogDatas
-from main_datas import material_with_link_list, user_data_type, material_code, col_cat_desc
-from tools import get_look_tableview, get_look_qs, qm_check
+from hierarchy import Hierarchy
+from main_datas import user_data_type, material_code, col_cat_desc, get_icon, material_icon, lock_icon
+from tools import get_look_tableview, qm_check
 from ui_link_add import Ui_LinkAdd
 from ui_link_add_again import Ui_LinkAddAgain
 
@@ -13,19 +15,19 @@ from ui_link_add_again import Ui_LinkAddAgain
 class LinkAdd(QWidget):
     link_add_signal = pyqtSignal(list)
 
-    def __init__(self, catalogue):
+    def __init__(self, catalog: CatalogDatas, hierarchy: Hierarchy):
         super().__init__()
 
         self.ui = Ui_LinkAdd()
         self.ui.setupUi(self)
 
-        self.catalog: CatalogDatas = catalogue
+        self.catalog: CatalogDatas = catalog
+        self.hierarchy: Hierarchy = hierarchy
 
         self.link_model = QStandardItemModel()
 
-        self.link_filter = QSortFilterProxyModel()
+        self.link_filter = NaturalSortProxyModel()
         self.link_filter.setFilterCaseSensitivity(Qt.CaseInsensitive)
-        self.link_filter.setDynamicSortFilter(True)
         self.link_filter.setSortCaseSensitivity(Qt.CaseInsensitive)
         self.link_filter.setSortLocaleAware(True)
 
@@ -54,12 +56,16 @@ class LinkAdd(QWidget):
         self.link_model.clear()
 
         a = self.tr("Ouvrage - Actuel")
-        b = self.tr("Ouvrage contenant déjà des liens")
+        b = self.tr("Lien Impossible : boucle")
 
-        search_start = self.catalog.cat_model.index(0, 0)
+        search_start = self.hierarchy.cat_model.index(0, 0)
 
-        qm_material_list = self.catalog.cat_model.match(search_start, user_data_type, material_code, -1,
+        qm_material_list = self.hierarchy.cat_model.match(search_start, user_data_type, material_code, -1,
                                                         Qt.MatchRecursive)
+
+        forbidden_list = set()
+
+        self.catalog.link_get_forbidden_list(material_name=material_text, forbidden_list=forbidden_list)
 
         for qm_val in qm_material_list:
 
@@ -77,19 +83,20 @@ class LinkAdd(QWidget):
 
             if qm_check(qm_parent):
 
-                qm_description = self.catalog.cat_model.index(qm_val.row(), col_cat_desc, qm_parent)
+                qm_desc = self.hierarchy.cat_model.index(qm_val.row(), col_cat_desc, qm_parent)
 
-                if qm_check(qm_description):
-                    description = qm_description.data()
+                if qm_check(qm_desc):
+                    description = qm_desc.data()
 
             if material_current == material_text:
-                qs = self.creation_qs_unselectable(material_name=material_current, description=description, message=a)
+                message = a
 
-            elif material_current.upper() in material_with_link_list:
-                qs = self.creation_qs_unselectable(material_name=material_current, description=description, message=b)
-
+            elif material_current in forbidden_list:
+                message = b
             else:
-                qs = self.creation_qs_selectable(material_name=material_current, description=description)
+                message = ""
+
+            qs = self.creation_qs(material_name=material_current, description=description, message=message)
 
             self.link_model.appendRow(qs)
 
@@ -99,31 +106,25 @@ class LinkAdd(QWidget):
         self.show()
 
     @staticmethod
-    def creation_qs_unselectable(material_name: str, description: str, message: str) -> QStandardItem:
-
-        if description == "" or material_name == description:
-            title = f'{material_name} -- [{message}]'
-        else:
-            title = f'{material_name} - {description} -- [{message}]'
-
-        qs = get_look_qs(qs=QStandardItem(title), italic=True)
-        qs.setForeground(QColor("red"))
-        qs.setFlags(Qt.ItemIsEnabled)
-
-        return qs
-
-    @staticmethod
-    def creation_qs_selectable(material_name: str, description: str) -> QStandardItem:
+    def creation_qs(material_name: str, description: str, message="") -> QStandardItem:
 
         if description == "" or material_name == description:
             title = f'{material_name}'
         else:
             title = f'{material_name} - {description}'
 
-        qs = get_look_qs(qs=QStandardItem(title))
+        if message == "":
 
-        qs.setData(material_name, user_data_type)
-        qs.setData(description, Qt.UserRole + 2)
+            qs = QStandardItem(get_icon(material_icon), title)
+            qs.setData(material_name, user_data_type)
+            qs.setData(description, Qt.UserRole + 2)
+
+        else:
+
+            qs = QStandardItem(get_icon(lock_icon), title)
+            qs.setForeground(QColor("red"))
+            qs.setEnabled(False)
+            qs.setToolTip(message)
 
         return qs
 
@@ -141,6 +142,9 @@ class LinkAdd(QWidget):
     def save(self):
 
         qm_selection_list = self.ui.links_list.selectionModel().selectedIndexes()
+
+        if len(qm_selection_list) == 0:
+            return
 
         qm_selection_list.sort()
 
@@ -196,9 +200,12 @@ class LinKAddAgain(QWidget):
 
         self.link_model = QStandardItemModel()
 
-        self.link_filter = QSortFilterProxyModel()
-        self.link_filter.setSourceModel(self.link_model)
+        self.link_filter = NaturalSortProxyModel()
         self.link_filter.setFilterCaseSensitivity(Qt.CaseInsensitive)
+        self.link_filter.setSortCaseSensitivity(Qt.CaseInsensitive)
+        self.link_filter.setSortLocaleAware(True)
+
+        self.link_filter.setSourceModel(self.link_model)
 
         self.ui.links_list.setModel(self.link_filter)
 
@@ -242,6 +249,47 @@ class LinKAddAgain(QWidget):
         self.link_creation_signal.emit([[material_name, description]])
 
         self.close()
+
+    @staticmethod
+    def a___________________end______():
+        pass
+
+
+class NaturalSortProxyModel(QSortFilterProxyModel):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+    def lessThan(self, qm_left, qm_right):
+
+        if not isinstance(qm_left, QModelIndex) or not isinstance(qm_right, QModelIndex):
+            return super().lessThan(qm_left, qm_right)
+
+        left_data = qm_left.data(Qt.DisplayRole)
+        right_data = qm_right.data(Qt.DisplayRole)
+
+        if not isinstance(left_data, str) or not isinstance(right_data, str):
+            return super().lessThan(qm_left, qm_right)
+
+        natural_key_left = self.natural_key(text=left_data)
+
+        if natural_key_left is None:
+            return super().lessThan(qm_left, qm_right)
+
+        natural_key_right = self.natural_key(text=right_data)
+
+        if natural_key_right is None:
+            return super().lessThan(qm_left, qm_right)
+
+        return natural_key_left < natural_key_right
+
+    @staticmethod
+    def natural_key(text):
+        try:
+            data = [(part.lower() if not part.isdigit() else int(part)) for part in re.split(r'(\d+)', text)]
+        except:
+            return None
+
+        return data
 
     @staticmethod
     def a___________________end______():

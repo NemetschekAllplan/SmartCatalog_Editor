@@ -7,16 +7,16 @@ from PyQt5.Qt import *
 
 from allplan_manage import AllplanDatas, AllplanPaths
 from attribute_335 import WidgetApercu, picture_loading
-from main_datas import attribute_setting_file
+from history_manage import AttributeModifyData
+from main_datas import attribute_setting_file, user_guid
 from structure_widget import WidgetStructure
 from tools import ValidatorInt, move_widget_ss_bouton, get_look_combobox, application_title
-from tools import set_appareance_button
+from tools import set_appareance_button, browser_file
 from ui_attribute_filling import Ui_AttributeFilling
-from browser import browser_file
 
 
 class AttributeFilling(QWidget):
-    attribute_changed_signal = pyqtSignal(QStandardItem, str, str, str, str, str, dict, str)
+    attribute_changed_signal = pyqtSignal(str, list, str, dict, str)
 
     def __init__(self, smartcatalog):
         super().__init__()
@@ -300,41 +300,94 @@ class AttributeFilling(QWidget):
 
     def aucun_clic(self):
 
-        valeur_originale = self.qs_118.text()
-        nouveau_texte = "0"
+        qs_parent = self.qs_118.parent()
 
-        # Attributs
-        self.qs_118.setText(nouveau_texte)
-        self.ui.numero_identification.setText(nouveau_texte)
+        if not isinstance(qs_parent, QStandardItem):
+            print("attribute_filling -- aucun_clic -- not isinstance(qs_parent, QStandardItem)")
+            return
 
-        dict_comp = {"111": {"numero": "111",
-                             "valeur_originale": self.qs_111_val.text(),
-                             "nouveau_texte": "",
-                             "ancien_index": self.qs_111_ind.text(),
-                             "nouvel_index": "-1"}}
+        # -------------
 
-        self.qs_111_val.setText("")
-        self.qs_111_ind.setText("-1")
+        guid_parent = qs_parent.data(user_guid)
 
-        dict_comp["252"] = {"numero": "252",
-                            "valeur_originale": self.qs_252_val.text(),
-                            "nouveau_texte": "",
-                            "ancien_index": self.qs_252_ind.text(),
-                            "nouvel_index": "-1"}
+        if not isinstance(guid_parent, str):
+            print("attribute_filling -- aucun_clic -- not isinstance(guid_parent, str)")
+            return
 
-        self.qs_252_val.setText("")
-        self.qs_252_ind.setText("-1")
+        # -------------
 
-        dict_comp["336"] = {"numero": "336",
-                            "valeur_originale": self.qs_336.text(),
-                            "nouveau_texte": "",
-                            "ancien_index": "-1",
-                            "nouvel_index": "-1"}
+        parent_name = qs_parent.text()
 
-        self.qs_336.setText("")
+        if not isinstance(parent_name, str):
+            print("attribute_filling -- aucun_clic -- not isinstance(parent_name, str)")
+            return
 
-        self.attribute_changed_signal.emit(self.qs_118, "118", valeur_originale, nouveau_texte, "-1", "-1", dict_comp,
-                             "Remplissage")
+        # -------------
+
+        attribute_data = list()
+        value_dict = dict()
+
+        # ------------- 118
+
+        value_current_118 = self.qs_118.text()
+        value_new_118 = "0"
+
+        self.qs_118.setText(value_new_118)
+        self.ui.numero_identification.setText(value_new_118)
+
+        attribute_data.append(AttributeModifyData(number_current="118", value_new=value_current_118))
+
+        value_dict["118"] = [value_current_118, value_new_118]
+
+        # ------------- 111
+
+        value_current_111 = self.qs_111_val.text()
+        value_new_111 = ""
+
+        value_index_current_111 = self.qs_111_ind.text()
+        value_index_new_111 = "-1"
+
+        self.qs_111_val.setText(value_new_111)
+        self.qs_111_ind.setText(value_index_new_111)
+
+        attribute_data.append(AttributeModifyData(number_current="111",
+                                                  value_new=value_current_111,
+                                                  value_index_new=value_index_current_111))
+
+        value_dict["111"] = [value_current_111, value_new_111]
+
+        # ------------- 252
+
+        value_current_252 = self.qs_252_val.text()
+        value_new_252 = ""
+
+        value_index_current_252 = self.qs_252_ind.text()
+        value_index_new_252 = "-1"
+
+        self.qs_252_val.setText(value_new_252)
+        self.qs_252_ind.setText(value_index_new_252)
+
+        attribute_data.append(AttributeModifyData(number_current="252",
+                                                  value_new=value_current_252,
+                                                  value_index_new=value_index_current_252))
+
+        value_dict["252"] = [value_current_252, value_new_252]
+
+        # ------------- 336
+
+        value_current_336 = self.qs_336.text()
+        value_new_336 = ""
+
+        self.qs_336.setText(value_new_336)
+
+        attribute_data.append(AttributeModifyData(number_current="336", value_new=value_current_336))
+
+        value_dict["336"] = [value_current_336, value_new_336]
+
+        # ------------- signal
+
+        self.attribute_changed_signal.emit(guid_parent, attribute_data, parent_name, value_dict,
+                                           self.tr("Groupe Remplissage"))
 
     def chb_hachurage_clic(self):
 
@@ -360,55 +413,109 @@ class AttributeFilling(QWidget):
         self.chb_change()
 
         # Attributs
-        if checked:
-
-            valeur_originale = self.qs_118.text()
-            nouveau_texte = "1"
-
-            self.qs_118.setText(nouveau_texte)
-            self.ui.numero_identification.setText(nouveau_texte)
-
-            dict_comp = {"111": {"numero": "111",
-                                 "valeur_originale": self.qs_111_val.text(),
-                                 "nouveau_texte": self.ui.hachurage.currentText(),
-                                 "ancien_index": self.qs_111_ind.text(),
-                                 "nouvel_index": self.ui.numero_hachurage.text()}}
-
-            self.qs_111_ind.setText(self.ui.numero_hachurage.text())
-            self.qs_111_val.setText(self.ui.hachurage.currentText())
-
-            dict_comp["252"] = {"numero": "252",
-                                "valeur_originale": self.qs_252_val.text(),
-                                "ancien_index": self.qs_252_ind.text()}
-            if couleur:
-                self.qs_252_ind.setText(self.ui.numero_couleur.text())
-                self.qs_252_val.setText(self.ui.numero_couleur.text())
-
-                dict_comp["252"]["nouveau_texte"] = self.ui.numero_couleur.text()
-                dict_comp["252"]["nouvel_index"] = self.ui.numero_couleur.text()
-
-            else:
-                self.qs_252_ind.setText("-1")
-                self.qs_252_val.setText("")
-
-                dict_comp["252"]["nouveau_texte"] = ""
-                dict_comp["252"]["nouvel_index"] = "-1"
-
-            dict_comp["336"] = {"numero": "336",
-                                "valeur_originale": self.qs_336.text(),
-                                "nouveau_texte": "",
-                                "ancien_index": "-1",
-                                "nouvel_index": "-1"}
-
-            self.qs_336.setText("")
-
-            self.attribute_changed_signal.emit(self.qs_118, "118", valeur_originale, nouveau_texte, "-1", "-1",
-                                               dict_comp, "Remplissage")
-
-            self.ui.hachurage.setFocus()
+        if not checked:
+            self.aucun_clic()
             return
 
-        self.aucun_clic()
+        qs_parent = self.qs_118.parent()
+
+        if not isinstance(qs_parent, QStandardItem):
+            print("attribute_filling -- chb_hachurage_clic -- not isinstance(qs_parent, QStandardItem)")
+            return
+
+        # -------------
+
+        guid_parent = qs_parent.data(user_guid)
+
+        if not isinstance(guid_parent, str):
+            print("attribute_filling -- chb_hachurage_clic -- not isinstance(guid_parent, str)")
+            return
+
+        # -------------
+
+        parent_name = qs_parent.text()
+
+        if not isinstance(parent_name, str):
+            print("attribute_filling -- chb_hachurage_clic -- not isinstance(parent_name, str)")
+            return
+
+        # -------------
+
+        attribute_data = list()
+        value_dict = dict()
+
+        # ------------- 118
+
+        value_current_118 = self.qs_118.text()
+        value_new_118 = "1"
+
+        self.qs_118.setText(value_new_118)
+        self.ui.numero_identification.setText(value_new_118)
+
+        attribute_data.append(AttributeModifyData(number_current="118", value_new=value_current_118))
+
+        value_dict["118"] = [value_current_118, value_new_118]
+
+        # ------------- 111
+
+        value_current_111 = self.qs_111_val.text()
+        value_new_111 = self.ui.hachurage.currentText()
+
+        value_index_current_111 = self.qs_111_ind.text()
+        value_index_new_111 = self.ui.numero_hachurage.text()
+
+        self.qs_111_val.setText(value_new_111)
+        self.qs_111_ind.setText(value_index_new_111)
+
+        attribute_data.append(AttributeModifyData(number_current="111",
+                                                  value_new=value_current_111,
+                                                  value_index_new=value_index_current_111))
+
+        value_dict["111"] = [value_current_111, value_new_111]
+
+        # ------------- 252
+
+        value_current_252 = self.qs_252_val.text()
+        value_index_current_252 = self.qs_252_ind.text()
+
+        if couleur:
+
+            value_new_252 = self.ui.couleur.currentText()
+            value_index_new_252 = self.ui.numero_couleur.text()
+
+        else:
+
+            value_new_252 = ""
+            value_index_new_252 = "-1"
+
+        self.qs_252_val.setText(value_new_252)
+        self.qs_252_ind.setText(value_index_new_252)
+
+        attribute_data.append(AttributeModifyData(number_current="252",
+                                                  value_new=value_current_252,
+                                                  value_index_new=value_index_current_252))
+
+        value_dict["252"] = [value_current_252, value_new_252]
+
+        # ------------- 336
+
+        value_current_336 = self.qs_336.text()
+        value_new_336 = ""
+
+        self.qs_336.setText(value_new_336)
+
+        attribute_data.append(AttributeModifyData(number_current="336", value_new=value_current_336))
+
+        value_dict["336"] = [value_current_336, value_new_336]
+
+        # ------------- signal
+
+        self.attribute_changed_signal.emit(guid_parent, attribute_data, parent_name, value_dict,
+                                           self.tr("Groupe Remplissage"))
+
+        # -------------
+
+        self.ui.hachurage.setFocus()
 
     def chb_motif_clic(self):
 
@@ -434,56 +541,109 @@ class AttributeFilling(QWidget):
         self.chb_change()
 
         # Attributs
-        if checked:
-
-            valeur_originale = self.qs_118.text()
-            nouveau_texte = "2"
-
-            self.qs_118.setText(nouveau_texte)
-            self.ui.numero_identification.setText(nouveau_texte)
-
-            dict_comp = {"111": {"numero": "111",
-                                 "valeur_originale": self.qs_111_val.text(),
-                                 "nouveau_texte": self.ui.motif.currentText(),
-                                 "ancien_index": self.qs_111_ind.text(),
-                                 "nouvel_index": self.ui.numero_motif.text()}}
-
-            self.qs_111_ind.setText(self.ui.numero_motif.text())
-            self.qs_111_val.setText(self.ui.motif.currentText())
-
-            dict_comp["252"] = {"numero": "252",
-                                "valeur_originale": self.qs_252_val.text(),
-                                "ancien_index": self.qs_252_ind.text()}
-
-            if couleur:
-                self.qs_252_ind.setText(self.ui.numero_couleur.text())
-                self.qs_252_val.setText(self.ui.numero_couleur.text())
-
-                dict_comp["252"]["nouveau_texte"] = self.ui.numero_couleur.text()
-                dict_comp["252"]["nouvel_index"] = self.ui.numero_couleur.text()
-
-            else:
-                self.qs_252_ind.setText("-1")
-                self.qs_252_val.setText("")
-
-                dict_comp["252"]["nouveau_texte"] = ""
-                dict_comp["252"]["nouvel_index"] = "-1"
-
-            dict_comp["336"] = {"numero": "336",
-                                "valeur_originale": self.qs_336.text(),
-                                "nouveau_texte": "",
-                                "ancien_index": "-1",
-                                "nouvel_index": "-1"}
-
-            self.qs_336.setText("")
-
-            self.attribute_changed_signal.emit(self.qs_118, "118", valeur_originale, nouveau_texte, "-1", "-1",
-                                               dict_comp, "Remplissage")
-
-            self.ui.motif.setFocus()
+        if not checked:
+            self.aucun_clic()
             return
 
-        self.aucun_clic()
+        qs_parent = self.qs_118.parent()
+
+        if not isinstance(qs_parent, QStandardItem):
+            print("attribute_filling -- chb_motif_clic -- not isinstance(qs_parent, QStandardItem)")
+            return
+
+        # -------------
+
+        guid_parent = qs_parent.data(user_guid)
+
+        if not isinstance(guid_parent, str):
+            print("attribute_filling -- chb_motif_clic -- not isinstance(guid_parent, str)")
+            return
+
+        # -------------
+
+        parent_name = qs_parent.text()
+
+        if not isinstance(parent_name, str):
+            print("attribute_filling -- chb_motif_clic -- not isinstance(parent_name, str)")
+            return
+
+        # -------------
+
+        attribute_data = list()
+        value_dict = dict()
+
+        # ------------- 118
+
+        value_current_118 = self.qs_118.text()
+        value_new_118 = "2"
+
+        self.qs_118.setText(value_new_118)
+        self.ui.numero_identification.setText(value_new_118)
+
+        attribute_data.append(AttributeModifyData(number_current="118", value_new=value_current_118))
+
+        value_dict["118"] = [value_current_118, value_new_118]
+
+        # ------------- 111
+
+        value_current_111 = self.qs_111_val.text()
+        value_new_111 = self.ui.motif.currentText()
+
+        value_index_current_111 = self.qs_111_ind.text()
+        value_index_new_111 = self.ui.numero_motif.text()
+
+        self.qs_111_val.setText(value_new_111)
+        self.qs_111_ind.setText(value_index_new_111)
+
+        attribute_data.append(AttributeModifyData(number_current="111",
+                                                  value_new=value_current_111,
+                                                  value_index_new=value_index_current_111))
+
+        value_dict["111"] = [value_current_111, value_new_111]
+
+        # ------------- 252
+
+        value_current_252 = self.qs_252_val.text()
+        value_index_current_252 = self.qs_252_ind.text()
+
+        if couleur:
+
+            value_new_252 = self.ui.couleur.currentText()
+            value_index_new_252 = self.ui.numero_couleur.text()
+
+        else:
+
+            value_new_252 = ""
+            value_index_new_252 = "-1"
+
+        self.qs_252_val.setText(value_new_252)
+        self.qs_252_ind.setText(value_index_new_252)
+
+        attribute_data.append(AttributeModifyData(number_current="252",
+                                                  value_new=value_current_252,
+                                                  value_index_new=value_index_current_252))
+
+        value_dict["252"] = [value_current_252, value_new_252]
+
+        # ------------- 336
+
+        value_current_336 = self.qs_336.text()
+        value_new_336 = ""
+
+        self.qs_336.setText(value_new_336)
+
+        attribute_data.append(AttributeModifyData(number_current="336", value_new=value_current_336))
+
+        value_dict["336"] = [value_current_336, value_new_336]
+
+        # ------------- signal
+
+        self.attribute_changed_signal.emit(guid_parent, attribute_data, parent_name, value_dict,
+                                           self.tr("Groupe Remplissage"))
+
+        # -------------
+
+        self.ui.motif.setFocus()
 
     def chb_couleur_clic(self):
 
@@ -504,121 +664,245 @@ class AttributeFilling(QWidget):
         # Tous
         self.chb_change()
 
-        valeur_originale = self.qs_118.text()
+        # -------------
 
+        qs_parent = self.qs_118.parent()
+
+        if not isinstance(qs_parent, QStandardItem):
+            print("attribute_filling -- chb_couleur_clic -- not isinstance(qs_parent, QStandardItem)")
+            return
+
+        # -------------
+
+        guid_parent = qs_parent.data(user_guid)
+
+        if not isinstance(guid_parent, str):
+            print("attribute_filling -- chb_couleur_clic -- not isinstance(guid_parent, str)")
+            return
+
+        # -------------
+
+        parent_name = qs_parent.text()
+
+        if not isinstance(parent_name, str):
+            print("attribute_filling -- chb_couleur_clic -- not isinstance(parent_name, str)")
+            return
+
+        # -------------
+
+        attribute_data = list()
+        value_dict = dict()
+
+        # --------------------------------
         # Attributs hachurage + couleur
+        # --------------------------------
+
         if hachurage and checked:
-            nouveau_texte = "1"
+            # ------------- 118
 
-            self.qs_118.setText(nouveau_texte)
-            self.ui.numero_identification.setText(nouveau_texte)
+            value_current_118 = self.qs_118.text()
+            value_new_118 = "1"
 
-            dict_comp = {"111": {"numero": "111",
-                                 "valeur_originale": self.qs_111_val.text(),
-                                 "nouveau_texte": self.ui.hachurage.currentText(),
-                                 "ancien_index": self.qs_111_ind.text(),
-                                 "nouvel_index": self.ui.numero_hachurage.text()}}
+            self.qs_118.setText(value_new_118)
+            self.ui.numero_identification.setText(value_new_118)
 
-            self.qs_111_ind.setText(self.ui.numero_hachurage.text())
-            self.qs_111_val.setText(self.ui.hachurage.currentText())
+            attribute_data.append(AttributeModifyData(number_current="118", value_new=value_current_118))
 
-            dict_comp["252"] = {"numero": "252",
-                                "valeur_originale": self.qs_252_val.text(),
-                                "nouveau_texte": self.ui.couleur.currentText(),
-                                "ancien_index": self.qs_252_ind.text(),
-                                "nouvel_index": self.ui.numero_couleur.text()}
+            value_dict["118"] = [value_current_118, value_new_118]
 
-            self.qs_252_ind.setText(self.ui.numero_couleur.text())
-            self.qs_252_val.setText(self.ui.couleur.currentText())
+            # ------------- 111
 
-            dict_comp["336"] = {"numero": "336",
-                                "valeur_originale": self.qs_336.text(),
-                                "nouveau_texte": "",
-                                "ancien_index": "-1",
-                                "nouvel_index": "-1"}
+            value_current_111 = self.qs_111_val.text()
+            value_new_111 = self.ui.hachurage.currentText()
 
-            self.qs_336.setText("")
+            value_index_current_111 = self.qs_111_ind.text()
+            value_index_new_111 = self.ui.numero_hachurage.text()
 
-            self.attribute_changed_signal.emit(self.qs_118, "118", valeur_originale, nouveau_texte, "-1", "-1",
-                                               dict_comp, "Remplissage")
+            self.qs_111_val.setText(value_new_111)
+            self.qs_111_ind.setText(value_index_new_111)
+
+            attribute_data.append(AttributeModifyData(number_current="111",
+                                                      value_new=value_current_111,
+                                                      value_index_new=value_index_current_111))
+
+            value_dict["111"] = [value_current_111, value_new_111]
+
+            # ------------- 252
+
+            value_current_252 = self.qs_252_val.text()
+            value_new_252 = self.ui.couleur.currentText()
+
+            value_index_current_252 = self.qs_252_ind.text()
+            value_index_new_252 = self.ui.numero_couleur.text()
+
+            self.qs_252_val.setText(value_new_252)
+            self.qs_252_ind.setText(value_index_new_252)
+
+            attribute_data.append(AttributeModifyData(number_current="252",
+                                                      value_new=value_current_252,
+                                                      value_index_new=value_index_current_252))
+
+            value_dict["252"] = [value_current_252, value_new_252]
+
+            # ------------- 336
+
+            value_current_336 = self.qs_336.text()
+            value_new_336 = ""
+
+            self.qs_336.setText(value_new_336)
+
+            attribute_data.append(AttributeModifyData(number_current="336", value_new=value_current_336))
+
+            value_dict["336"] = [value_current_336, value_new_336]
+
+            # ------------- signal
+
+            self.attribute_changed_signal.emit(guid_parent, attribute_data, parent_name, value_dict,
+                                               self.tr("Groupe Remplissage"))
+
+            # -------------
 
             self.ui.couleur.setFocus()
             return
 
+        # --------------------------------
         # Attributs motif + couleur
+        # --------------------------------
+
         if motif and checked:
-            nouveau_texte = "2"
+            # ------------- 118
 
-            self.qs_118.setText(nouveau_texte)
-            self.ui.numero_identification.setText(nouveau_texte)
+            value_current_118 = self.qs_118.text()
+            value_new_118 = "2"
 
-            dict_comp = {"111": {"numero": "111",
-                                 "valeur_originale": self.qs_111_val.text(),
-                                 "nouveau_texte": self.ui.motif.currentText(),
-                                 "ancien_index": self.qs_111_ind.text(),
-                                 "nouvel_index": self.ui.numero_motif.text()}}
+            self.qs_118.setText(value_new_118)
+            self.ui.numero_identification.setText(value_new_118)
 
-            self.qs_111_ind.setText(self.ui.numero_motif.text())
-            self.qs_111_val.setText(self.ui.motif.currentText())
+            attribute_data.append(AttributeModifyData(number_current="118", value_new=value_current_118))
 
-            dict_comp["252"] = {"numero": "252",
-                                "valeur_originale": self.qs_252_val.text(),
-                                "nouveau_texte": self.ui.couleur.currentText(),
-                                "ancien_index": self.qs_252_ind.text(),
-                                "nouvel_index": self.ui.numero_couleur.text()}
+            value_dict["118"] = [value_current_118, value_new_118]
 
-            self.qs_252_ind.setText(self.ui.numero_couleur.text())
-            self.qs_252_val.setText(self.ui.couleur.currentText())
+            # ------------- 111
 
-            dict_comp["336"] = {"numero": "336",
-                                "valeur_originale": self.qs_336.text(),
-                                "nouveau_texte": "",
-                                "ancien_index": "-1",
-                                "nouvel_index": "-1"}
+            value_current_111 = self.qs_111_val.text()
+            value_new_111 = self.ui.motif.currentText()
 
-            self.qs_336.setText("")
+            value_index_current_111 = self.qs_111_ind.text()
+            value_index_new_111 = self.ui.numero_motif.text()
 
-            self.attribute_changed_signal.emit(self.qs_118, "118", valeur_originale, nouveau_texte, "-1", "-1",
-                                               dict_comp, "Remplissage")
+            self.qs_111_val.setText(value_new_111)
+            self.qs_111_ind.setText(value_index_new_111)
+
+            attribute_data.append(AttributeModifyData(number_current="111",
+                                                      value_new=value_current_111,
+                                                      value_index_new=value_index_current_111))
+
+            value_dict["111"] = [value_current_111, value_new_111]
+
+            # ------------- 252
+
+            value_current_252 = self.qs_252_val.text()
+            value_new_252 = self.ui.numero_couleur.text()
+
+            value_index_current_252 = self.qs_252_ind.text()
+            value_index_new_252 = self.ui.numero_couleur.text()
+
+            self.qs_252_val.setText(value_new_252)
+            self.qs_252_ind.setText(value_index_new_252)
+
+            attribute_data.append(AttributeModifyData(number_current="252",
+                                                      value_new=value_current_252,
+                                                      value_index_new=value_index_current_252))
+
+            value_dict["252"] = [value_current_252, value_new_252]
+
+            # ------------- 336
+
+            value_current_336 = self.qs_336.text()
+            value_new_336 = ""
+
+            self.qs_336.setText(value_new_336)
+
+            attribute_data.append(AttributeModifyData(number_current="336", value_new=value_current_336))
+
+            value_dict["336"] = [value_current_336, value_new_336]
+
+            # ------------- signal
+
+            self.attribute_changed_signal.emit(guid_parent, attribute_data, parent_name, value_dict,
+                                               self.tr("Groupe Remplissage"))
+
+            # -------------
 
             self.ui.couleur.setFocus()
             return
 
+        # --------------------------------
         # Attributs couleur seul
+        # --------------------------------
+
         if checked:
-            nouveau_texte = "3"
+            # ------------- 118
 
-            self.qs_118.setText(nouveau_texte)
-            self.ui.numero_identification.setText(nouveau_texte)
+            value_current_118 = self.qs_118.text()
+            value_new_118 = "3"
 
-            dict_comp = {"111": {"numero": "111",
-                                 "valeur_originale": self.qs_111_val.text(),
-                                 "nouveau_texte": self.ui.couleur.currentText(),
-                                 "ancien_index": self.qs_111_ind.text(),
-                                 "nouvel_index": self.ui.numero_couleur.text()}}
+            self.qs_118.setText(value_new_118)
+            self.ui.numero_identification.setText(value_new_118)
 
-            self.qs_111_ind.setText(self.ui.numero_couleur.text())
-            self.qs_111_val.setText(self.ui.couleur.currentText())
+            attribute_data.append(AttributeModifyData(number_current="118", value_new=value_current_118))
 
-            dict_comp["252"] = {"numero": "252",
-                                "valeur_originale": self.qs_252_val.text(),
-                                "nouveau_texte": "",
-                                "ancien_index": self.qs_252_ind.text(),
-                                "nouvel_index": "-1"}
+            value_dict["118"] = [value_current_118, value_new_118]
 
-            self.qs_252_ind.setText("-1")
-            self.qs_252_val.setText("")
+            # ------------- 111
 
-            dict_comp["336"] = {"numero": "336",
-                                "valeur_originale": self.qs_336.text(),
-                                "nouveau_texte": "",
-                                "ancien_index": "-1",
-                                "nouvel_index": "-1"}
+            value_current_111 = self.qs_111_val.text()
+            value_new_111 = self.ui.couleur.currentText()
 
-            self.qs_336.setText("")
+            value_index_current_111 = self.qs_111_ind.text()
+            value_index_new_111 = self.ui.numero_couleur.text()
 
-            self.attribute_changed_signal.emit(self.qs_118, "118", valeur_originale, nouveau_texte, "-1", "-1",
-                                               dict_comp, "Remplissage")
+            self.qs_111_val.setText(value_new_111)
+            self.qs_111_ind.setText(value_index_new_111)
+
+            attribute_data.append(AttributeModifyData(number_current="111",
+                                                      value_new=value_current_111,
+                                                      value_index_new=value_index_current_111))
+
+            value_dict["111"] = [value_current_111, value_new_111]
+
+            # ------------- 252
+
+            value_current_252 = self.qs_252_val.text()
+            value_new_252 = ""
+
+            value_index_current_252 = self.qs_252_ind.text()
+            value_index_new_252 = "-1"
+
+            self.qs_252_val.setText(value_new_252)
+            self.qs_252_ind.setText(value_index_new_252)
+
+            attribute_data.append(AttributeModifyData(number_current="252",
+                                                      value_new=value_current_252,
+                                                      value_index_new=value_index_current_252))
+
+            value_dict["252"] = [value_current_252, value_new_252]
+
+            # ------------- 336
+
+            value_current_336 = self.qs_336.text()
+            value_new_336 = ""
+
+            self.qs_336.setText(value_new_336)
+
+            attribute_data.append(AttributeModifyData(number_current="336", value_new=value_current_336))
+
+            value_dict["336"] = [value_current_336, value_new_336]
+
+            # ------------- signal
+
+            self.attribute_changed_signal.emit(guid_parent, attribute_data, parent_name, value_dict,
+                                               self.tr("Groupe Remplissage"))
 
             self.ui.couleur.setFocus()
             return
@@ -652,46 +936,104 @@ class AttributeFilling(QWidget):
         self.chb_change()
 
         # Attributs
-        if checked:
-            valeur_originale = self.qs_118.text()
-            nouveau_texte = "6"
-
-            self.qs_118.setText(nouveau_texte)
-            self.ui.numero_identification.setText(nouveau_texte)
-
-            dict_comp = {"111": {"numero": "111",
-                                 "valeur_originale": self.qs_111_val.text(),
-                                 "nouveau_texte": "",
-                                 "ancien_index": self.qs_111_ind.text(),
-                                 "nouvel_index": "-1"}}
-
-            self.qs_111_val.setText("")
-            self.qs_111_ind.setText("-1")
-
-            dict_comp["252"] = {"numero": "252",
-                                "valeur_originale": self.qs_252_val.text(),
-                                "nouveau_texte": "",
-                                "ancien_index": self.qs_252_ind.text(),
-                                "nouvel_index": "-1"}
-
-            self.qs_252_val.setText("")
-            self.qs_252_ind.setText("-1")
-
-            dict_comp["336"] = {"numero": "336",
-                                "valeur_originale": self.qs_336.text(),
-                                "nouveau_texte": self.ui.surface.text(),
-                                "ancien_index": "-1",
-                                "nouvel_index": "-1"}
-
-            self.qs_336.setText(self.ui.surface.text())
-
-            self.attribute_changed_signal.emit(self.qs_118, "118", valeur_originale, nouveau_texte, "-1", "-1",
-                                               dict_comp, "Remplissage")
-
-            self.ui.browser_bt.setFocus()
+        if not checked:
+            self.aucun_clic()
             return
 
-        self.aucun_clic()
+        # -------------
+
+        qs_parent = self.qs_118.parent()
+
+        if not isinstance(qs_parent, QStandardItem):
+            print("attribute_filling -- chb_surface_clic -- not isinstance(qs_parent, QStandardItem)")
+            return
+
+        # -------------
+
+        guid_parent = qs_parent.data(user_guid)
+
+        if not isinstance(guid_parent, str):
+            print("attribute_filling -- chb_surface_clic -- not isinstance(guid_parent, str)")
+            return
+
+        # -------------
+
+        parent_name = qs_parent.text()
+
+        if not isinstance(parent_name, str):
+            print("attribute_filling -- chb_surface_clic -- not isinstance(parent_name, str)")
+            return
+
+        # -------------
+
+        attribute_data = list()
+        value_dict = dict()
+
+        # ------------- 118
+
+        value_current_118 = self.qs_118.text()
+        value_new_118 = "6"
+
+        self.qs_118.setText(value_new_118)
+        self.ui.numero_identification.setText(value_new_118)
+
+        attribute_data.append(AttributeModifyData(number_current="118", value_new=value_current_118))
+
+        value_dict["118"] = [value_current_118, value_new_118]
+
+        # ------------- 111
+
+        value_current_111 = self.qs_111_val.text()
+        value_new_111 = ""
+
+        value_index_current_111 = self.qs_111_ind.text()
+        value_index_new_111 = "-1"
+
+        self.qs_111_val.setText(value_new_111)
+        self.qs_111_ind.setText(value_index_new_111)
+
+        attribute_data.append(AttributeModifyData(number_current="111",
+                                                  value_new=value_current_111,
+                                                  value_index_new=value_index_current_111))
+
+        value_dict["111"] = [value_current_111, value_new_111]
+
+        # ------------- 252
+
+        value_current_252 = self.qs_252_val.text()
+        value_new_252 = ""
+
+        value_index_current_252 = self.qs_252_ind.text()
+        value_index_new_252 = "-1"
+
+        self.qs_252_val.setText(value_new_252)
+        self.qs_252_ind.setText(value_index_new_252)
+
+        attribute_data.append(AttributeModifyData(number_current="252",
+                                                  value_new=value_current_252,
+                                                  value_index_new=value_index_current_252))
+
+        value_dict["252"] = [value_current_252, value_new_252]
+
+        # ------------- 336
+
+        value_current_336 = self.qs_336.text()
+        value_new_336 = self.ui.surface.text()
+
+        self.qs_336.setText(value_new_336)
+
+        attribute_data.append(AttributeModifyData(number_current="336", value_new=value_current_336))
+
+        value_dict["336"] = [value_current_336, value_new_336]
+
+        # ------------- signal
+
+        self.attribute_changed_signal.emit(guid_parent, attribute_data, parent_name, value_dict,
+                                           self.tr("Groupe Remplissage"))
+
+        # -------------
+
+        self.ui.browser_bt.setFocus()
 
     def chb_style_clic(self):
 
@@ -718,47 +1060,105 @@ class AttributeFilling(QWidget):
         # Tous
         self.chb_change()
 
-        if checked:
-            valeur_originale = self.qs_118.text()
-            nouveau_texte = "5"
-
-            # Attributs
-            self.qs_118.setText(nouveau_texte)
-            self.ui.numero_identification.setText(nouveau_texte)
-
-            dict_comp = {"111": {"numero": "111",
-                                 "valeur_originale": self.qs_111_val.text(),
-                                 "nouveau_texte": self.ui.style.currentText(),
-                                 "ancien_index": self.qs_111_ind.text(),
-                                 "nouvel_index": self.ui.numero_style.text()}}
-
-            self.qs_111_ind.setText(self.ui.numero_style.text())
-            self.qs_111_val.setText(self.ui.style.currentText())
-
-            dict_comp["252"] = {"numero": "252",
-                                "valeur_originale": self.qs_252_val.text(),
-                                "nouveau_texte": "",
-                                "ancien_index": self.qs_252_ind.text(),
-                                "nouvel_index": "-1"}
-
-            self.qs_252_ind.setText("-1")
-            self.qs_252_val.setText("")
-
-            dict_comp["336"] = {"numero": "336",
-                                "valeur_originale": self.qs_336.text(),
-                                "nouveau_texte": "",
-                                "ancien_index": "-1",
-                                "nouvel_index": "-1"}
-
-            self.qs_336.setText("")
-
-            self.attribute_changed_signal.emit(self.qs_118, "118", valeur_originale, nouveau_texte, "-1", "-1",
-                                               dict_comp, "Remplissage")
-
-            self.ui.style.setFocus()
+        # Attributs
+        if not checked:
+            self.aucun_clic()
             return
 
-        self.aucun_clic()
+        # -------------
+
+        qs_parent = self.qs_118.parent()
+
+        if not isinstance(qs_parent, QStandardItem):
+            print("attribute_filling -- chb_surface_clic -- not isinstance(qs_parent, QStandardItem)")
+            return
+
+        # -------------
+
+        guid_parent = qs_parent.data(user_guid)
+
+        if not isinstance(guid_parent, str):
+            print("attribute_filling -- chb_surface_clic -- not isinstance(guid_parent, str)")
+            return
+
+        # -------------
+
+        parent_name = qs_parent.text()
+
+        if not isinstance(parent_name, str):
+            print("attribute_filling -- chb_surface_clic -- not isinstance(parent_name, str)")
+            return
+
+        # -------------
+
+        attribute_data = list()
+        value_dict = dict()
+
+        # ------------- 118
+
+        value_current_118 = self.qs_118.text()
+        value_new_118 = "5"
+
+        self.qs_118.setText(value_new_118)
+        self.ui.numero_identification.setText(value_new_118)
+
+        attribute_data.append(AttributeModifyData(number_current="118", value_new=value_current_118))
+
+        value_dict["118"] = [value_current_118, value_new_118]
+
+        # ------------- 111
+
+        value_current_111 = self.qs_111_val.text()
+        value_new_111 = self.ui.style.currentText()
+
+        value_index_current_111 = self.qs_111_ind.text()
+        value_index_new_111 = self.ui.numero_style.text()
+
+        self.qs_111_val.setText(value_new_111)
+        self.qs_111_ind.setText(value_index_new_111)
+
+        attribute_data.append(AttributeModifyData(number_current="111",
+                                                  value_new=value_current_111,
+                                                  value_index_new=value_index_current_111))
+
+        value_dict["111"] = [value_current_111, value_new_111]
+
+        # ------------- 252
+
+        value_current_252 = self.qs_252_val.text()
+        value_new_252 = ""
+
+        value_index_current_252 = self.qs_252_ind.text()
+        value_index_new_252 = "-1"
+
+        self.qs_252_val.setText(value_new_252)
+        self.qs_252_ind.setText(value_index_new_252)
+
+        attribute_data.append(AttributeModifyData(number_current="252",
+                                                  value_new=value_current_252,
+                                                  value_index_new=value_index_current_252))
+
+        value_dict["252"] = [value_current_252, value_new_252]
+
+        # ------------- 336
+
+        value_current_336 = self.qs_336.text()
+        value_new_336 = ""
+
+        self.qs_336.setText(value_new_336)
+
+        attribute_data.append(AttributeModifyData(number_current="336", value_new=value_current_336))
+
+        value_dict["336"] = [value_current_336, value_new_336]
+
+        # ------------- signal
+
+        self.attribute_changed_signal.emit(guid_parent, attribute_data, parent_name, value_dict,
+                                           self.tr("Groupe Remplissage"))
+
+        # -------------
+
+        self.ui.style.setFocus()
 
     def chb_change(self):
 
@@ -892,9 +1292,17 @@ class AttributeFilling(QWidget):
 
         if isinstance(self.allplan.allplan_paths, AllplanPaths):
 
-            shortcuts_list = [self.allplan.allplan_paths.std_cat_path,
+            shortcuts_list = [self.allplan.allplan_paths.std_path,
                               self.allplan.allplan_paths.prj_path,
                               self.allplan.allplan_paths.tmp_path]
+
+            if self.allplan.catalog_user_path != self.allplan.allplan_paths.std_design_path:
+
+                design = f"{self.allplan.catalog_user_path}Design\\"
+
+                if os.path.exists(design):
+                    shortcuts_list.append(design)
+
         else:
 
             shortcuts_list = list()
@@ -930,19 +1338,50 @@ class AttributeFilling(QWidget):
 
     def mise_a_jour_surface(self):
 
-        valeur_originale = self.qs_336.text()
+        value_current = self.qs_336.text()
 
-        nouveau_texte = self.ui.surface.text()
+        value_new = self.ui.surface.text()
 
-        if valeur_originale == nouveau_texte:
+        if value_current == value_new:
             return
 
         if not self.ui.surface.isVisible():
             return
 
-        self.qs_336.setText(nouveau_texte)
+        self.qs_336.setText(value_new)
 
-        self.attribute_changed_signal.emit(self.qs_336, "336", valeur_originale, nouveau_texte, '-1', '-1', dict(), "")
+        # -------------
+
+        qs_parent = self.qs_118.parent()
+
+        if not isinstance(qs_parent, QStandardItem):
+            print("attribute_filling -- mise_a_jour_surface -- not isinstance(qs_parent, QStandardItem)")
+            return
+
+        # -------------
+
+        guid_parent = qs_parent.data(user_guid)
+
+        if not isinstance(guid_parent, str):
+            print("attribute_filling -- mise_a_jour_surface -- not isinstance(guid_parent, str)")
+            return
+
+        # -------------
+
+        parent_name = qs_parent.text()
+
+        if not isinstance(parent_name, str):
+            print("attribute_filling -- mise_a_jour_surface -- not isinstance(parent_name, str)")
+            return
+
+        # -------------
+
+        attribute_data = [AttributeModifyData(number_current="336", value_new=value_current)]
+        value_dict = {"336": [value_current, value_new]}
+
+        # -------------
+
+        self.attribute_changed_signal.emit(guid_parent, attribute_data, parent_name, value_dict, "")
 
     def afficher_apercu(self):
 
@@ -1079,7 +1518,7 @@ class AttributeFilling(QWidget):
 
             self.mise_a_jour(qs_val=qs_val,
                              qs_ind=qs_ind,
-                             numero=numero,
+                             number_current=numero,
                              widget_combo=widget_combo,
                              widget_index=widget_index)
             return
@@ -1111,30 +1550,63 @@ class AttributeFilling(QWidget):
 
         self.mise_a_jour(qs_val=qs_val,
                          qs_ind=qs_ind,
-                         numero=numero,
+                         number_current=numero,
                          widget_combo=widget_combo,
                          widget_index=widget_index)
 
     def mise_a_jour(self, qs_val: QStandardItem, qs_ind: QStandardItem,
-                    numero: str, widget_combo: QComboBox, widget_index: QLabel):
+                    number_current: str, widget_combo: QComboBox, widget_index: QLabel):
 
-        valeur_originale = qs_val.text()
-        nouveau_texte = widget_combo.currentText()
+        value_current = qs_val.text()
+        value_new = widget_combo.currentText()
 
-        ancien_index = qs_ind.text()
-        nouvel_index = widget_index.text()
+        value_index_current = qs_ind.text()
+        value_index_new = widget_index.text()
 
-        if valeur_originale == nouveau_texte and ancien_index == nouvel_index:
+        if value_current == value_new and value_index_current == value_index_new:
             return
 
         if not widget_combo.isVisible():
             return
 
-        qs_val.setText(nouveau_texte)
-        qs_ind.setText(nouvel_index)
+        qs_val.setText(value_new)
+        qs_ind.setText(value_index_new)
 
-        self.attribute_changed_signal.emit(qs_val, numero, valeur_originale, nouveau_texte, ancien_index,
-                                           nouvel_index, dict(), "")
+        # -------------
+
+        qs_parent = self.qs_118.parent()
+
+        if not isinstance(qs_parent, QStandardItem):
+            print("attribute_filling -- mise_a_jour -- not isinstance(qs_parent, QStandardItem)")
+            return
+
+        # -------------
+
+        guid_parent = qs_parent.data(user_guid)
+
+        if not isinstance(guid_parent, str):
+            print("attribute_filling -- mise_a_jour -- not isinstance(guid_parent, str)")
+            return
+
+        # -------------
+
+        parent_name = qs_parent.text()
+
+        if not isinstance(parent_name, str):
+            print("attribute_filling -- mise_a_jour -- not isinstance(parent_name, str)")
+            return
+
+        # -------------
+
+        attribute_data = [AttributeModifyData(number_current=number_current,
+                                              value_new=value_current,
+                                              value_index_new=value_index_current)]
+
+        value_dict = {number_current: [value_current, value_new]}
+
+        # -------------
+
+        self.attribute_changed_signal.emit(guid_parent, attribute_data, parent_name, value_dict, "")
 
     @staticmethod
     def a___________________event______():
@@ -1176,6 +1648,8 @@ class AttributeFilling(QWidget):
             if event.type() != QEvent.KeyPress:
                 return super().eventFilter(obj, event)
 
+            event: QEvent.KeyPress
+
             if event.key() == Qt.Key_Up or event.key() == Qt.Key_Down:
                 event.ignore()
                 return True
@@ -1199,6 +1673,8 @@ class AttributeFilling(QWidget):
             if event.type() != QEvent.KeyPress:
                 return super().eventFilter(obj, event)
 
+            event: QEvent.KeyPress
+
             if event.key() == Qt.Key_Up or event.key() == Qt.Key_Down:
                 event.ignore()
                 return True
@@ -1221,6 +1697,8 @@ class AttributeFilling(QWidget):
 
             if event.type() != QEvent.KeyPress:
                 return super().eventFilter(obj, event)
+
+            event: QEvent.KeyPress
 
             if event.key() == Qt.Key_Up or event.key() == Qt.Key_Down:
                 event.ignore()
@@ -1251,6 +1729,8 @@ class AttributeFilling(QWidget):
 
             if event.type() != QEvent.KeyPress:
                 return super().eventFilter(obj, event)
+
+            event: QEvent.KeyPress
 
             if event.key() == Qt.Key_Up or event.key() == Qt.Key_Down:
                 event.ignore()

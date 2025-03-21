@@ -13,17 +13,23 @@ from PyQt5.Qt import *
 # ---------------------------------------
 
 debug = False
+
+special_version = False
 help_mode = False
+debug_tooltips = False
 
 # ---------------------------------------
 
-application_version = "2025.0.0.91"
+if special_version:
+    application_version = "2025.0.2.100"
+else:
+    application_version = "2026.0.0.400"
 
 application_name = "Allplan - SmartCatalog"
 application_title = "Allplan - SmartCatalog Editor"
 
-
 # ---------------------------------------
+
 
 def find_app_path():
     """
@@ -126,7 +132,7 @@ def get_documents_path_3() -> str:
         my_docs = os.getenv('USERPROFILE')
 
         if not isinstance(my_docs, str):
-            print(f"main_datas -- get_documents_path_2 -- not isinstance(my_docs, str)")
+            print(f"main_datas -- get_documents_path_3 -- not isinstance(my_docs, str)")
             return ""
 
         if not my_docs.endswith("\\"):
@@ -214,11 +220,23 @@ def get_asc_export_path(asc_user_folder: str):
     return asc_export_folder
 
 
-asc_exe_path = find_app_path()
-icons_path = f"{asc_exe_path}icons\\"
+asc_folder_path = find_app_path()
+
+if asc_folder_path == "C:\\Stockage\\GIT\\GitHub\\smartest2\\":
+    asc_exe_path = f"C:\\Program Files (x86)\\Allplan - Smart-Catalogue\\Allplan - Smart-Catalogue.exe"
+
+else:
+
+    if special_version:
+        asc_exe_path = f"{asc_folder_path}Allplan - Smart-Catalogue.exe"
+
+    else:
+        asc_exe_path = f"{asc_folder_path}Allplan - SmartCatalog.exe"
+
+icons_path = f"{asc_folder_path}icons\\"
 
 asc_old_path = "C:\\Program Files (x86)\\Allplan - Smart-Catalogue\\"
-icons_old_path = f"{asc_exe_path}icones ASC\\"
+icons_old_path = f"{asc_folder_path}icones ASC\\"
 
 allplan_docs = get_documents_path()  # C:\Users\jmauger\Documents\ where is Nemetschek\Allplan\2025\Usr\Local
 
@@ -286,7 +304,6 @@ if debug:
 else:
     pattern_filter = f"^({folder_code}|{material_code}|{component_code}|{link_code})"
 
-
 # ---------------------------------------
 # Icons
 # ---------------------------------------
@@ -335,6 +352,7 @@ exit_icon = ":/Images/exit.png"
 
 # --------------------------------------- External --------
 
+external_bdd_acca_icon = ":/Images/external_bdd_acca.png"
 external_bdd_option_icon = ":/Images/external_bdd_option.svg"
 external_bdd_all_icon = ":/Images/external_bdd_all.png"
 external_bdd_aj_soft_icon = ":/Images/external_bdd_aj_soft.png"
@@ -349,6 +367,10 @@ external_bdd_nevaris_icon = ":/Images/external_bdd_nevaris.png"
 external_bdd_progemi_icon = ":/Images/external_bdd_progemi.png"
 external_bdd_show_icon = ":/Images/external_bdd_show.svg"
 external_bdd_synermi_icon = ":/Images/external_bdd_synermi.png"
+external_bdd_ts_icon = ":/Images/external_bdd_ts.png"
+external_bdd_mxdb_icon = ":/Images/external_bdd_mxdb.png"
+external_bdd_frilo = ":/Images/external_bdd_frilo.png"
+external_bdd_bimplus_icon = ":/Images/external_bdd_bimplus.png"
 
 # --------------------------------------- F --------
 
@@ -517,6 +539,21 @@ language_extension_3 = {"FR": "fra",
                         "SL": "svn",
                         "SK": "slk"}
 
+# todo tranduction
+language_icons = {"fra": "FR",
+                  "eng": "EN",
+                  "deu": "DE",
+                  "ita": "IT",
+                  "spa": "ES",
+                  "hrv": "HR",
+                  "rum": "RO",
+                  "rus": "RU",
+                  "tch": "CS",
+                  "svn": "SL",
+                  "slk": "SK",
+                  "swi": "CH",
+                  "aus": "AU",
+                  "can": "CA"}
 # ---------------------------------------
 #  ATTRIBUTS XML ALLPLAN
 # ---------------------------------------
@@ -548,23 +585,6 @@ col_attr_group = 3
 col_enum_index = 0
 col_enum_valeur = 1
 
-code_attr_number = "numéro"
-code_attr_name = "nom"
-code_attr_group = "groupe"
-code_attr_value = "valeur"
-code_attr_datatype = "datatype"
-code_attr_option = "option"
-code_attr_unit = "unite"
-code_attr_uid = "uid"
-code_attr_user = "user"
-code_attr_import = "import_number"
-code_attr_enumeration = "enumeration"
-code_attr_min = "min"
-code_attr_max = "max"
-code_attr_modify = "modify"
-code_attr_visible = "visible"
-code_attr_tooltips = "tooltips"
-
 code_attr_str = "Texte"
 code_attr_int = "Nombre entier"
 code_attr_dbl = "Nombre décimal"
@@ -589,6 +609,7 @@ col_cat_value = 0
 col_cat_desc = 1
 col_cat_index = 1
 col_cat_number = 2
+col_cat_count = 3
 
 # ---------------------------------------
 #  CATALOGUE - MODEL - TYPE
@@ -608,7 +629,8 @@ type_texture = "Texture"
 type_layer = "Layer"
 type_fill = "Remplissage"
 type_room = "Piece"
-type_ht = "Hauteur"
+type_unknown = "Unknown"
+type_title = "title"
 
 # ---------------------------------------
 #  CATALOGUE - SAUVEGARDE
@@ -620,8 +642,65 @@ liste_attributs_with_no_val_no_save = ["207", "252", "111", "336", "346", "345",
 #  CATALOGUE - ATTRIBUTE DEFAULT
 # ---------------------------------------
 
+
+class AttributeDefault:
+
+    def __init__(self):
+        super().__init__()
+
+        self.base = "83"
+
+        self.current = "83"
+
+        self.valid_list = ["83", "507", "508", "570", "571", "574", "575", ""]
+
+        self.valid_count = len(self.valid_list)
+
+    def set_current(self, number: str):
+
+        self.current = self.check_number(number=number)
+
+    def check_number(self, number: str) -> str:
+
+        if not isinstance(number, str):
+            print("main_datas -- AttributeDefault -- check_value -- not isinstance(value, int)")
+            return self.base
+
+        number = number.strip()
+
+        if number in self.valid_list:
+            return number
+
+        for number in self.valid_list:
+
+            if number.startswith(number):
+                return number
+
+        return self.base
+
+    def get_value(self, index: int) -> str:
+
+        if not isinstance(index, int):
+            print("main_datas -- AttributeDefault -- get_value -- not isinstance(index, int)")
+            return self.base
+
+        if index < 0:
+            print("main_datas -- AttributeDefault -- get_value -- index < 0")
+            return self.base
+
+        if index >= self.valid_count:
+            print("main_datas -- AttributeDefault -- get_value -- index >= self.valid_count")
+            return self.base
+
+        return self.valid_list[index]
+
+
+attribut_default_obj = AttributeDefault()
+
 attribute_default_base = "83"
 attribute_name_default_base = "code"
+
+attribute_default_list = ["83", "507", "508", "570", "571", "574", "575", ""]
 
 # ---------------------------------------
 #  ATTRIBUTS GROUPES
@@ -645,22 +724,7 @@ attribute_val_default_room = {"231": "R",
 attribute_val_default_room_first = "231"
 attribute_val_default_room_last = "264"
 
-# attribute_val_default_ht = {}
-# {"112": "0.000",
-# "113": "0.000",
-#  "114": "21",
-# "115": "00",
-# "169": "0.000",
-# "171": "0.000",
-# "1978": "",
-# "1979": ""}
-
-# attribute_val_default_ht_first = "112"
-# attribute_val_default_ht_last = "1979"
-
-# liste_attributs_ordre = ["207", "120", "202", "209", "110"]
 liste_attributs_ordre = ["207"]
-# liste_attributs_ordre.extend(list(attribut_val_defaut_ht))
 liste_attributs_ordre.extend(list(attribute_val_default_layer))
 liste_attributs_ordre.extend(list(attribute_val_default_fill))
 liste_attributs_ordre.extend(list(attribute_val_default_room))
@@ -686,7 +750,8 @@ formula_piece_dict = {"MT_Boden(": "Obj_Floor(",
                       "MT_Window(": "Obj_Window(",
                       "MT_Door(": "Obj_Door(",
                       "MT_Roof(": "Obj_Roof(",
-                      "MT_RoofLayer(": "Obj_RoofLayer("}
+                      "MT_RoofLayer(": "Obj_RoofLayer(",
+                      "VOB_Fläche": "@81@"}
 
 formula_piece_pattern = '|'.join(map(re.escape, formula_piece_dict.keys()))
 
@@ -706,7 +771,7 @@ fonction_list = ['_IF_', '_ELSE_', '_ELSE__IF_',
                  'Obj_Niche', 'Obj_Wall', 'Obj_Room', 'Obj_Column', 'Obj_WindowSmartSymbol',
                  'Obj_DoorSmartSymbol', 'Obj_RoofWindow', 'Obj_Window', 'Obj_Door', 'Obj_Roof',
                  'Obj_RoofLayer', 'TOPOLOGY', 'PARENTPRECAST', 'IMPRRE', 'FIXTURECOUNT',
-                 "@OBJ@", "@VOB@",
+                 "@OBJ@", "@VOB@", "QT",
                  "p:", "v:", "x:",
                  "SOMME", "SUM", "SUMME", "TOTALE", "TOTAL", "Group", "Openingmacrocount"
                  ]
@@ -724,15 +789,7 @@ material_with_link_list = list()
 #  UNITE
 # ---------------------------------------
 
-# todo traduction
-
-dict_unites = {"m2": "m²", "m²": "m²",
-               "m3": "m³", "m³": "m³",
-               "ml": "m", "m": "m",
-               "qt": "Qt", "qté": "Qt", "qte": "Qt", "u": "Qt",
-               "kg": "kg"}
-
-dict_formules_by_unite = {"m²": "@229@", "m³": "@223@", "m": "@220@", "Qt": "1", "kg": "1"}
+dict_formules_by_unite = ["@223@", "@229@", "@220@", "1", "1"]
 
 # ---------------------------------------
 #  HTML
@@ -756,7 +813,7 @@ dict_html = {'&': "&amp;",
 liste_obj = ["@76@", "Filtre_d_objets", "Object filter", "Objektfilter", "Filtro_oggetto", "Filtro de objetos",
              "Filtar objekata", "Filtru_obiecte", "Фильтр_объекта", "Filtr objektů", "Filter objektov"]
 
-liste_mat = ["@96@", "Matériau_dyn", "Dyn_material", "Dyn_Material", "Dyn_Materiale", "Material_Dyn",
+liste_mat = ["@96@", "Matériau_dyn", "Dyn_material", "Dyn_Materiale", "Material_Dyn",
              "Dyn_materijal", "Dyn_Material", "Дин_материал", "Dyn_materiál", "Din_material"]
 
 liste_qte = ["@215@", "Quantité", "Piece", "Stück", "Pezzi", "Komad", "Bucati", "штук", "Kusy", "Kosov"]
@@ -782,7 +839,9 @@ col_favoris_formule_formule = 1
 col_favoris_formule_famille = 2
 
 user_data_type = Qt.UserRole + 1
+user_guid = Qt.UserRole + 2
 user_formule_ok = Qt.UserRole + 3
+user_unknown = Qt.UserRole + 4
 
 # ---------------------------------------
 #  BIBLE
@@ -792,30 +851,46 @@ bdd_type_xml = "Allplan - SmartCatalog"
 bdd_type_fav = "Allplan - Favorites"
 bdd_type_kukat = "Allplan - Kukat"
 
+bdd_type_bcm = "Allplan - BCM"
+bdd_type_bcm_c = "Allplan - BCM - Component"
+
 bdd_type_nevaris = "Nevaris"
 bdd_type_nevaris_xlsx = "Nevaris - Excel"
 
-bdd_type_bcm = "Allplan - BCM"
-type_bcm_c = "Allplan - BCM - Component"
+bdd_type_excel = "Excel"
+bdd_type_csv = "Csv"
 
-type_excel = "Excel"
-type_csv = "Csv"
+bdd_type_gimi = "Euriciel - Gimi"
+bdd_type_allmetre_e = "Euriciel - Allmétré"
 
-type_gimi = "Euriciel - Gimi"
-type_allmetre_e = "Euriciel - Allmétré"
+bdd_type_allmetre_a = "Ajsoft - Allmétré"
 
-type_allmetre_a = "Ajsoft - Allmétré"
+bdd_type_synermi = "Synermi"
+bdd_type_capmi = "Capmi"
+bdd_type_progemi = "Progemi"
 
-type_synermi = "Synermi"
-type_capmi = "Capmi"
-type_progemi = "Progemi"
+bdd_type_mxdb = "SQL"
 
-type_mxdb = "SQL"
+bdd_type_xpwe = "XPWE"
 
-type_extern = "Extern"
+bdd_type_team_system_xml = "teamsystem_xml"
+bdd_type_team_system_xlsx = "teamsystem_xlsx"
 
-categories_extern = [type_synermi, type_capmi, type_progemi, type_extern, type_gimi, type_allmetre_e, type_allmetre_a,
-                     type_mxdb]
+bdd_type_extern = "Extern"
+
+# -------------
+
+categories_bcm = [bdd_type_bcm, bdd_type_bcm_c]
+
+categories_excel = [bdd_type_excel, bdd_type_csv]
+
+categories_nevaris = [bdd_type_nevaris, bdd_type_nevaris_xlsx]
+
+categories_extern = [bdd_type_synermi, bdd_type_capmi, bdd_type_progemi, bdd_type_extern,
+                     bdd_type_gimi, bdd_type_allmetre_e, bdd_type_allmetre_a,
+                     bdd_type_mxdb, bdd_type_xpwe, bdd_type_team_system_xml, bdd_type_team_system_xlsx]
+
+# -------------
 
 openable_file_extension = (".xml", ".KAT", '.sgsfnfx', '.rkfanfx', '.scfanfx', '.swefnfx', '.spafnfx', '.dhfanfx',
                            '.defanfx', '.ibtfnfx', '.sabfnfx', '.szafnfx', '.skbfnfx', '.gafanfx', '.srfanfx',
@@ -846,21 +921,26 @@ bdd_icons_dict = {bdd_type_xml: catalog_icon,
                   bdd_type_nevaris_xlsx: external_bdd_nevaris_icon,
 
                   bdd_type_bcm: external_bdd_bcm_icon,
-                  type_bcm_c: external_bdd_bcm_c_icon,
+                  bdd_type_bcm_c: external_bdd_bcm_c_icon,
 
                   bdd_type_kukat: allplan_icon,
-                  type_excel: excel_icon,
+                  bdd_type_excel: excel_icon,
 
-                  type_gimi: external_bdd_gimi_icon,
-                  type_allmetre_e: external_bdd_allmetre_icon,
-                  type_allmetre_a: external_bdd_aj_soft_icon,
-                  type_synermi: external_bdd_synermi_icon,
-                  type_capmi: external_bdd_capmi_icon,
-                  type_progemi: external_bdd_progemi_icon,
+                  bdd_type_gimi: external_bdd_gimi_icon,
+                  bdd_type_allmetre_e: external_bdd_allmetre_icon,
+                  bdd_type_allmetre_a: external_bdd_aj_soft_icon,
+                  bdd_type_synermi: external_bdd_synermi_icon,
+                  bdd_type_capmi: external_bdd_capmi_icon,
+                  bdd_type_progemi: external_bdd_progemi_icon,
 
-                  type_mxdb: external_bdd_show_icon,
+                  bdd_type_mxdb: external_bdd_mxdb_icon,
 
-                  type_extern: external_bdd_show_icon}
+                  bdd_type_xpwe: external_bdd_acca_icon,
+
+                  bdd_type_team_system_xlsx: external_bdd_ts_icon,
+                  bdd_type_team_system_xml: external_bdd_ts_icon,
+
+                  bdd_type_extern: external_bdd_show_icon}
 
 # ---------------------------------------
 #  SETTINGS
@@ -870,7 +950,10 @@ bdd_icons_dict = {bdd_type_xml: catalog_icon,
 #               Default Language
 # ===================================================
 
-language_default = "EN"
+if special_version:
+    language_default = "FR"
+else:
+    language_default = "EN"
 
 try:
     windows_language = locale.getdefaultlocale()[0]
@@ -899,6 +982,7 @@ app_setting_datas = {"actionbar_size": "2",
                      "height": 875,
                      "ismaximized_on": False,
                      "language": language_default,
+                     "message": "",
 
                      "search_recent": list(),
 
@@ -909,6 +993,7 @@ app_setting_datas = {"actionbar_size": "2",
                      "path_catalog_open": "",
                      "path_catalog_prj": "",
                      "path_catalog_save": "",
+                     "path_message": "",
 
                      "path_icons": "",
 
@@ -968,22 +1053,23 @@ attribute_config_datas = {"material": ["110", "118", "120", "141", "202", "209",
                           "formula": ["99", "220", "221", "222", "223", "229"]}
 
 # ===================================================
-#                       FORMULA FAVORITES
-# ===================================================
-
-bcm_setting_file = "bcm_setting"
-
-bcm_setting_datas = {"bcm_material_group": True,
-                     "bcm_link": True,
-                     "bcm_comment": True,
-                     "bcm_price": True}
-
-# ===================================================
 #                       CAT LIST
 # ===================================================
 
 cat_list_file = "cat_open_list"
 cat_list_datas = list()
+
+recent_config_file = "recent_config"
+
+recent_config_dict = {"etc": True,
+                      "std": True,
+                      "demo": True,
+                      "other": True,
+                      "2022": True,
+                      "2023": True,
+                      "2024": True,
+                      "2025": True,
+                      "2026": True}
 
 # ===================================================
 #                       FORMULA FAVORITES
@@ -1252,6 +1338,20 @@ sejour_index = 13
 
 # todo traduction
 
+unit_dict = {'FR': ['m³', 'm²', 'm', 'Qt', 'kg'],
+             'EN': ['m³', 'm²', 'm', 'Pc', 'kg'],
+             'DE': ['m³', 'm²', 'm', 'St', 'kg'],
+             'IT': ['m³', 'm²', 'm', 'Pz', 'kg'],
+             'ES': ['m³', 'm²', 'm', 'Pzs', 'kg'],
+             'HR': ['m3', 'm2', 'm', 'Kom', 'kg'],
+             'RO': ['m3', 'm2', 'm', 'Buc', 'kg'],
+             'RU': ['м3', 'м2', 'м', 'Шт', 'кг'],
+             'CS': ['m³', 'm²', 'm', 'Ks', 'kg'],
+             'SL': ['m3', 'm2', 'm', 'Kos', 'kg'],
+             'SK': ['m³', 'm²', 'm', 'Ks', 'kg']}
+
+# todo traduction
+
 translation_room = {"FR": ["Aération", "Air frais", "Bain", "Balcon", "Bureau", "Chauffage", "Comble", "Couloir",
                            "Cour", "Débarras", "Escalier", "Hall", "Loggia", "Séjour"],
 
@@ -1459,7 +1559,7 @@ room_sub_config_count = len(room_config_list[0])
 # todo traduction
 
 unit_list_file = "unit_list"
-unit_list_datas = ["m³", "m²", "m", "Pcs", "kg"]
+unit_list_datas = ["m³", "m²", "m", "Pc", "kg"]
 
 # ===================================================
 #                       UPDATE LIST
@@ -1475,6 +1575,21 @@ update_setting_datas = {"height": 500,
 
 update_config_file = "update_config"
 update_config_datas = dict()
+
+# ===================================================
+#                       VOB
+# ===================================================
+
+vob_setting_file = "vob_setting"
+
+vob_setting_datas = {"filter": 0,
+                     "height": 500,
+                     "ismaximized_on": False,
+                     "order": 0,
+                     "order_col": 0,
+                     "save": "",
+                     "splitter": 75,
+                     "width": 400}
 
 # ===================================================
 #                       WARNING
@@ -1499,9 +1614,8 @@ settings_names = {app_setting_file: app_setting_datas,
                   attribute_setting_file: attribute_setting_datas,
                   attribute_config_file: attribute_config_datas,
 
-                  bcm_setting_file: bcm_setting_datas,
-
                   cat_list_file: cat_list_datas,
+                  recent_config_file: recent_config_dict,
 
                   formula_setting_file: formula_setting_datas,
 
@@ -1529,6 +1643,8 @@ settings_names = {app_setting_file: app_setting_datas,
 
                   update_setting_file: update_setting_datas,
                   update_config_file: update_config_datas,
+
+                  vob_setting_file: vob_setting_datas,
 
                   warning_setting_file: warning_setting_datas}
 

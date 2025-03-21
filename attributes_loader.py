@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*
+from attribute_error import AttributeUnknown
 from attribute_lineedit_str import AttributeLineeditStr
 from catalog_manage import *
 from attribute_date import AttributeDate
@@ -25,6 +26,8 @@ class AttributesDetailLoader(QWidget):
         self.asc = asc
 
         self.catalog: CatalogDatas = self.asc.catalog
+        self.hierarchy: Hierarchy = self.catalog.hierarchy
+
         self.allplan: AllplanDatas = self.asc.allplan
 
         self.liste_details: QListWidget = self.asc.ui.attributes_detail
@@ -41,7 +44,11 @@ class AttributesDetailLoader(QWidget):
 
         listwidgetitem = QListWidgetItem(self.liste_details)
         listwidgetitem.setFlags(listwidgetitem.flags() & ~Qt.ItemIsSelectable)
+
+        # ------------
+
         listwidgetitem.setData(user_data_type, type_nom)
+        listwidgetitem.setData(user_data_number, attribut_default_obj.current)
 
         # ------------------------
         # Creation widget
@@ -55,11 +62,11 @@ class AttributesDetailLoader(QWidget):
         # Creation signals
         # ------------------------
 
-        widget.attribute_changed_signal.connect(self.catalog.undo_modify_attribute)
+        widget.attribute_changed_signal.connect(self.catalog.history_modify_attribute)
 
-        widget.attribute_changed_signal.connect(self.catalog.catalog_header_manage)
+        widget.attribute_changed_signal.connect(self.hierarchy.header_manage)
 
-        widget.icon_changed_signal.connect(self.catalog.undo_icon_changed)
+        widget.icon_changed_signal.connect(self.catalog.history_change_icon)
 
         widget.ui.value_attrib.installEventFilter(self)
         widget.ui.formatting_bt.installEventFilter(self)
@@ -69,9 +76,7 @@ class AttributesDetailLoader(QWidget):
         # Add listwidgetitem
         # ------------------------
 
-        listwidgetitem.setData(user_data_number, "Nom")
         listwidgetitem.setSizeHint(widget.sizeHint())
-
         listwidgetitem.setSizeHint(QSize(widget.width(), 40))
 
         self.liste_details.addItem(listwidgetitem)
@@ -79,15 +84,21 @@ class AttributesDetailLoader(QWidget):
 
         # ------------------------
 
-    def ajouter_lien(self, parent_index: QModelIndex, current_row: int, link_model: QStandardItemModel):
+    def add_lien(self, parent_index: QModelIndex, current_row: int, link_model: QStandardItemModel):
 
+        # ---------------
         # Création listwidgetitem
         # ---------------
 
         listwidgetitem = QListWidgetItem(self.liste_details)
         listwidgetitem.setFlags(listwidgetitem.flags() & ~Qt.ItemIsSelectable)
-        listwidgetitem.setData(user_data_type, type_lien)
 
+        # ------------
+
+        listwidgetitem.setData(user_data_type, type_lien)
+        listwidgetitem.setData(user_data_number, type_lien)
+
+        # ---------------
         # Création widget
         # ---------------
 
@@ -99,17 +110,18 @@ class AttributesDetailLoader(QWidget):
         widget.material_open.connect(self.catalog.goto_material)
         widget.component_open.connect(self.catalog.goto_component)
 
+        # ---------------
         # Création mapper
         # ---------------
 
-        qm_material_name = self.catalog.cat_model.index(current_row, col_cat_value, parent_index)
+        qm_material_name = self.hierarchy.cat_model.index(current_row, col_cat_value, parent_index)
 
         if not qm_check(qm_material_name):
             material_name = self.tr("Lien")
         else:
             material_name = qm_material_name.data()
 
-        qm_material_desc = self.catalog.cat_model.index(current_row, col_cat_desc, parent_index)
+        qm_material_desc = self.hierarchy.cat_model.index(current_row, col_cat_desc, parent_index)
 
         if not qm_check(qm_material_desc):
             description = ""
@@ -125,6 +137,7 @@ class AttributesDetailLoader(QWidget):
 
         widget.material_name = material_name
 
+        # ---------------
         # Création listwidgetitem
         # ---------------
 
@@ -134,7 +147,7 @@ class AttributesDetailLoader(QWidget):
         self.liste_details.addItem(listwidgetitem)
         self.liste_details.setItemWidget(listwidgetitem, widget)
 
-    def add_code(self, qs_value: MyQstandardItem, forbidden_names_list: list, attribute_datas: dict,
+    def add_code(self, qs_value: MyQstandardItem, forbidden_names_list: list, attribute_obj: AttributeDatas,
                  material_linked=False):
 
         # ------------------------
@@ -143,9 +156,11 @@ class AttributesDetailLoader(QWidget):
 
         listwidgetitem = QListWidgetItem(self.liste_details)
         listwidgetitem.setFlags(listwidgetitem.flags() & ~Qt.ItemIsSelectable)
-        listwidgetitem.setData(user_data_type, type_code)
 
-        # listwidgetitem.setBackground(QColor("#e9e7e3"))
+        # ------------
+
+        listwidgetitem.setData(user_data_type, type_code)
+        listwidgetitem.setData(user_data_number, attribut_default_obj.current)
 
         # ------------------------
         # Creation widget
@@ -154,7 +169,7 @@ class AttributesDetailLoader(QWidget):
         widget = AttributeCode(qs_value=qs_value,
                                material_linked=material_linked,
                                forbidden_names_list=forbidden_names_list,
-                               attribute_datas=attribute_datas)
+                               attribute_obj=attribute_obj)
 
         widget.ui.value_attrib.installEventFilter(self)
         widget.ui.formatting_bt.installEventFilter(self)
@@ -166,21 +181,20 @@ class AttributesDetailLoader(QWidget):
 
         widget.code_changed_signal.connect(self.catalog.material_code_renamed)
 
+        widget.attribute_defaul_signal.connect(self.asc.main_bar.catalogue_modifier_parametres)
+
         if material_linked:
-            widget.link_code_changed_signal.connect(self.catalog.link_refresh_code)
             self.catalog.material_update_link_number(widget.ui.value_attrib.text())
 
-        widget.attribute_changed_signal.connect(self.catalog.undo_modify_attribute)
+        widget.attribute_changed_signal.connect(self.catalog.history_modify_attribute)
 
-        widget.attribute_changed_signal.connect(self.catalog.catalog_header_manage)
+        widget.attribute_changed_signal.connect(self.hierarchy.header_manage)
 
         # ------------------------
         # Add listwidgetitem
         # ------------------------
 
-        listwidgetitem.setData(user_data_number, attribute_default_base)
         listwidgetitem.setSizeHint(widget.sizeHint())
-
         listwidgetitem.setSizeHint(QSize(widget.width(), 40))
 
         self.liste_details.addItem(listwidgetitem)
@@ -188,7 +202,7 @@ class AttributesDetailLoader(QWidget):
 
         # ------------------------
 
-    def add_lineedit(self, qs_value: MyQstandardItem, attribute_datas: dict,
+    def add_lineedit(self, qs_value: MyQstandardItem, attribute_obj: AttributeDatas,
                      is_material=False):
 
         # ------------------------
@@ -196,7 +210,11 @@ class AttributesDetailLoader(QWidget):
         # ------------------------
 
         listwidgetitem = QListWidgetItem(self.liste_details)
+
+        # ------------
+
         listwidgetitem.setData(user_data_type, type_ligne)
+        listwidgetitem.setData(user_data_number, attribute_obj.number)
 
         # ------------------------
         # Creation widget
@@ -204,7 +222,7 @@ class AttributesDetailLoader(QWidget):
 
         widget = AttributeLineedit(allplan_version=self.allplan.version_allplan_current,
                                    qs_value=qs_value,
-                                   attribute_datas=attribute_datas,
+                                   attribute_obj=attribute_obj,
                                    is_material=is_material)
 
         # ------------------------
@@ -217,7 +235,7 @@ class AttributesDetailLoader(QWidget):
         # Creation signals
         # ------------------------
 
-        widget.attribute_changes_signal.connect(self.catalog.undo_modify_attribute)
+        widget.attribute_changed_signal.connect(self.catalog.history_modify_attribute)
 
         widget.ui.value_attrib.installEventFilter(self)
 
@@ -225,10 +243,7 @@ class AttributesDetailLoader(QWidget):
         # Add listwidgetitem
         # ------------------------
 
-        listwidgetitem.setData(user_data_number, widget.ui.num_attrib.text())
-
         listwidgetitem.setSizeHint(widget.sizeHint())
-
         listwidgetitem.setSizeHint(QSize(widget.width(), 40))
 
         self.liste_details.addItem(listwidgetitem)
@@ -236,15 +251,19 @@ class AttributesDetailLoader(QWidget):
 
         # ------------------------
 
-    def add_lineedit_str(self, qm_parent: QModelIndex, qs_value: MyQstandardItem, qs_desc, attribute_datas: dict,
-                         is_material=False):
+    def add_lineedit_str(self, qm_parent: QModelIndex, qs_value: MyQstandardItem, qs_desc,
+                         attribute_obj: AttributeDatas, is_material=False):
 
         # ------------------------
         # Creation listwidgetitem
         # ------------------------
 
         listwidgetitem = QListWidgetItem(self.liste_details)
+
+        # ------------
+
         listwidgetitem.setData(user_data_type, type_ligne)
+        listwidgetitem.setData(user_data_number, attribute_obj.number)
 
         # ------------------------
         # Creation widget
@@ -253,7 +272,7 @@ class AttributesDetailLoader(QWidget):
         widget = AttributeLineeditStr(allplan_version=self.allplan.version_allplan_current,
                                       qs_value=qs_value,
                                       qs_desc=qs_desc,
-                                      attribute_datas=attribute_datas,
+                                      attribute_obj=attribute_obj,
                                       is_material=is_material,
                                       listwidgetitem=listwidgetitem)
 
@@ -262,7 +281,7 @@ class AttributesDetailLoader(QWidget):
         # ------------------------
 
         mapper_parent = QDataWidgetMapper(self.asc)
-        mapper_parent.setModel(self.catalog.cat_model)
+        mapper_parent.setModel(self.hierarchy.cat_model)
 
         mapper_parent.addMapping(widget.code_title, col_cat_value, b"text")
 
@@ -280,36 +299,37 @@ class AttributesDetailLoader(QWidget):
         self.asc.ui.splitter.splitterMoved.connect(widget.adjust_width)
         self.asc.ui_resized.connect(widget.adjust_width)
 
+        widget.ui.value_attrib.installEventFilter(self)
+        widget.ui.formatting_bt.installEventFilter(self)
+
         # ------------------------
         # Creation signals
         # ------------------------
 
-        widget.attribute_changed_signal.connect(self.catalog.undo_modify_attribute)
-
-        widget.ui.value_attrib.installEventFilter(self)
-        widget.ui.formatting_bt.installEventFilter(self)
-
-        widget.link_desc_changed_signal.connect(self.catalog.link_refresh_desc)
+        widget.link_desc_changed_signal.connect(self.catalog.material_desc_changed)
+        widget.attribute_changed_signal.connect(self.catalog.history_modify_attribute)
 
         # ------------------------
         # Add listwidgetitem
         # ------------------------
-
-        listwidgetitem.setData(user_data_number, widget.ui.num_attrib.text())
 
         self.liste_details.addItem(listwidgetitem)
         self.liste_details.setItemWidget(listwidgetitem, widget)
 
         # ------------------------
 
-    def add_formula(self, qs_val: QStandardItem, attribute_datas: dict):
+    def add_formula(self, qs_val: QStandardItem, attribute_obj: AttributeDatas):
 
         # ------------------------
         # Creation listwidgetitem
         # ------------------------
 
         listwidgetitem = QListWidgetItem(self.liste_details)
+
+        # ------------
+
         listwidgetitem.setData(user_data_type, type_formule)
+        listwidgetitem.setData(user_data_number, attribute_obj.number)
 
         # ------------------------
         # Creation widget
@@ -317,14 +337,14 @@ class AttributesDetailLoader(QWidget):
 
         widget = AttributeFormula(asc=self.asc,
                                   qs_value=qs_val,
-                                  attribute_datas=attribute_datas,
+                                  attribute_obj=attribute_obj,
                                   listwidgetitem=listwidgetitem)
 
         # ------------------------
         # Widget Loading
         # ------------------------
 
-        widget.chargement()
+        widget.chargement(search_error_active=self.hierarchy.cat_filter_1.filterRole() == user_formule_ok)
 
         self.asc.ui.splitter.splitterMoved.connect(widget.adjust_width)
         self.asc.ui_resized.connect(widget.adjust_width)
@@ -339,8 +359,9 @@ class AttributesDetailLoader(QWidget):
         widget.ui.formula_color_bt.installEventFilter(self)
         widget.ui.formula_favorite_bt.installEventFilter(self)
 
-        widget.attribute_changed_signal.connect(self.catalog.undo_modify_attribute)
-        widget.formula_changed.connect(self.catalog.erreur_selectionner_premiere)
+        widget.attribute_changed_signal.connect(self.catalog.history_modify_attribute)
+        widget.formula_changed.connect(self.catalog.select_first_formula_error)
+        widget.formula_corrected.connect(self.catalog.formula_correct)
 
         widget.ui.value_attrib.size_change.connect(self.catalog.formula_size_change_signal.emit)
 
@@ -357,30 +378,26 @@ class AttributesDetailLoader(QWidget):
 
         # ------------------------
 
-    def add_combobox(self, qs_value: QStandardItem, qs_index: QStandardItem, attribute_datas: dict):
+    def add_combobox(self, qs_value: QStandardItem, qs_index: QStandardItem, attribute_obj: AttributeDatas):
 
         # ------------------------
         # Creation listwidgetitem
         # ------------------------
 
         listwidgetitem = QListWidgetItem(self.liste_details)
+
+        # ------------
+
         listwidgetitem.setData(user_data_type, type_combo)
+        listwidgetitem.setData(user_data_number, attribute_obj.number)
 
         # ------------------------
         # Creation widget
         # ------------------------
 
-        widget = AttributeCombobox(model_combo=attribute_datas.get(code_attr_enumeration, QStandardItemModel()),
-                                   attribute_datas=attribute_datas,
+        widget = AttributeCombobox(attribute_datas=attribute_obj,
                                    qs_value=qs_value,
                                    qs_index=qs_index)
-
-        # ------------------------
-        # Define Number & Name of attribute
-        # ------------------------
-
-        widget.ui.num_attrib.setText(attribute_datas.get(code_attr_number, ""))
-        widget.ui.name_attrib.setText(attribute_datas.get(code_attr_name, ""))
 
         # ------------------------
         # Widget Loading
@@ -395,16 +412,13 @@ class AttributesDetailLoader(QWidget):
         widget.ui.value_attrib.lineEdit().installEventFilter(self)
         widget.ui.value_attrib.installEventFilter(self)
 
-        widget.attribute_changed_signal.connect(self.catalog.undo_modify_attribute)
+        widget.attribute_changed_signal.connect(self.catalog.history_modify_attribute)
 
         # ------------------------
         # Add listwidgetitem
         # ------------------------
 
-        listwidgetitem.setData(user_data_number, widget.ui.num_attrib.text())
-
         listwidgetitem.setSizeHint(widget.sizeHint())
-
         listwidgetitem.setSizeHint(QSize(widget.width(), 40))
 
         self.liste_details.addItem(listwidgetitem)
@@ -412,20 +426,24 @@ class AttributesDetailLoader(QWidget):
 
         # ------------------------
 
-    def ajouter_checkbox(self, qs_val: QStandardItem, attribute_datas: dict):
+    def ajouter_checkbox(self, qs_val: QStandardItem, attribute_obj: AttributeDatas):
 
         # ------------------------
         # Creation listwidgetitem
         # ------------------------
 
         listwidgetitem = QListWidgetItem(self.liste_details)
+
+        # ------------
+
         listwidgetitem.setData(user_data_type, type_checkbox)
+        listwidgetitem.setData(user_data_number, attribute_obj.number)
 
         # ------------------------
         # Creation widget
         # ------------------------
 
-        widget = AttributeCheckbox(qs_value=qs_val, attribute_datas=attribute_datas)
+        widget = AttributeCheckbox(qs_value=qs_val, attribute_obj=attribute_obj)
 
         # ------------------------
         # Widget Loading
@@ -439,8 +457,9 @@ class AttributesDetailLoader(QWidget):
 
         widget.ui.value_attrib.installEventFilter(self)
 
-        widget.attribute_changed_signal.connect(self.catalog.undo_modify_attribute)
+        widget.attribute_changed_signal.connect(self.catalog.history_modify_attribute)
 
+        # ---------------
         # Création listwidgetitem
         # ---------------
 
@@ -455,20 +474,24 @@ class AttributesDetailLoader(QWidget):
 
         # ------------------------
 
-    def add_date(self, qs_value: QStandardItem, attribute_datas: dict):
+    def add_date(self, qs_value: QStandardItem, attribute_obj: AttributeDatas):
 
         # ------------------------
         # Creation listwidgetitem
         # ------------------------
 
         listwidgetitem = QListWidgetItem(self.liste_details)
+
+        # ------------
+
         listwidgetitem.setData(user_data_type, type_date)
+        listwidgetitem.setData(user_data_number, attribute_obj.number)
 
         # ------------------------
         # Creation widget
         # ------------------------
 
-        widget = AttributeDate(qs_value=qs_value, language=self.asc.langue, attribute_datas=attribute_datas)
+        widget = AttributeDate(qs_value=qs_value, language=self.asc.langue, attribute_obj=attribute_obj)
 
         # ------------------------
         # Widget Loading
@@ -483,16 +506,13 @@ class AttributesDetailLoader(QWidget):
         widget.ui.value_attrib.installEventFilter(self)
         widget.ui.calendar_bt.installEventFilter(self)
 
-        widget.attribute_changed_signal.connect(self.catalog.undo_modify_attribute)
+        widget.attribute_changed_signal.connect(self.catalog.history_modify_attribute)
 
         # ------------------------
         # Add listwidgetitem
         # ------------------------
 
-        listwidgetitem.setData(user_data_number, widget.ui.num_attrib.text())
-
         listwidgetitem.setSizeHint(widget.sizeHint())
-
         listwidgetitem.setSizeHint(QSize(widget.width(), 40))
 
         self.liste_details.addItem(listwidgetitem)
@@ -500,20 +520,24 @@ class AttributesDetailLoader(QWidget):
 
         # ------------------------
 
-    def add_surface(self, qs_val: QStandardItem, attribute_datas: dict):
+    def add_surface(self, qs_val: QStandardItem, attribute_obj: AttributeDatas):
 
         # ------------------------
         # Creation listwidgetitem
         # ------------------------
 
         listwidgetitem = QListWidgetItem(self.liste_details)
+
+        # ------------
+
         listwidgetitem.setData(user_data_type, type_texture)
+        listwidgetitem.setData(user_data_number, attribute_obj.number)
 
         # ------------------------
         # Creation widget
         # ------------------------
 
-        widget = Attribute335(asc=self.asc, qs_value=qs_val, attribute_datas=attribute_datas)
+        widget = Attribute335(asc=self.asc, qs_value=qs_val, attribute_obj=attribute_obj)
 
         # ------------------------
         # Creation signals
@@ -523,16 +547,13 @@ class AttributesDetailLoader(QWidget):
         widget.ui.browser_bt.installEventFilter(self)
         widget.ui.preview_bt.installEventFilter(self)
 
-        widget.attribute_changed_signal.connect(self.catalog.undo_modify_attribute)
+        widget.attribute_changed_signal.connect(self.catalog.history_modify_attribute)
 
         # ------------------------
         # Add listwidgetitem
         # ------------------------
 
-        listwidgetitem.setData(user_data_number, widget.ui.num_attrib.text())
-
         listwidgetitem.setSizeHint(widget.sizeHint())
-
         listwidgetitem.setSizeHint(QSize(widget.width(), 40))
 
         self.liste_details.addItem(listwidgetitem)
@@ -542,12 +563,18 @@ class AttributesDetailLoader(QWidget):
 
     def add_layer(self, qs_val: QStandardItem, datas_index_row: dict):
 
+        # ---------------
         # Création listwidgetitem
         # ---------------
 
         listwidgetitem = QListWidgetItem(self.liste_details)
-        listwidgetitem.setData(user_data_type, type_layer)
 
+        # ------------
+
+        listwidgetitem.setData(user_data_type, type_layer)
+        listwidgetitem.setData(user_data_number, attribute_val_default_layer_first)
+
+        # ---------------
         # Création widget
         # ---------------
 
@@ -564,104 +591,101 @@ class AttributesDetailLoader(QWidget):
 
         widget.ui.lock_141.installEventFilter(self)
 
+        # ---------------
         # Création mapper - Layer
         # ---------------
 
-        numero = "141"
+        number_str = "141"
 
-        if numero in datas_index_row:
-            widget.qs_141_ind = qs_val.child(datas_index_row[numero], col_cat_index)
-            widget.qs_141_val = qs_val.child(datas_index_row[numero], col_cat_value)
+        if number_str in datas_index_row:
+            widget.qs_141_ind = qs_val.child(datas_index_row[number_str], col_cat_index)
+            widget.qs_141_val = qs_val.child(datas_index_row[number_str], col_cat_value)
 
-            if numero in self.allplan.attributes_dict:
+            attribute_obj = self.allplan.attributes_dict.get(number_str)
 
-                attribute_datas = self.allplan.attributes_dict.get(numero, dict)
+            if isinstance(attribute_obj, AttributeDatas):
+                widget.ui.name_141.setText(attribute_obj.name)
+                widget.ui.name_141.setToolTip(attribute_obj.tooltips)
 
-                if isinstance(attribute_datas, dict):
-                    widget.ui.name_141.setText(attribute_datas.get(code_attr_name, ""))
-                    widget.ui.name_141.setToolTip(attribute_datas.get(code_attr_tooltips, ""))
-
+        # ---------------
         # Création mapper - style de ligne
         # ---------------
 
-        numero = "349"
+        number_str = "349"
 
-        if numero in datas_index_row:
-            widget.qs_349 = qs_val.child(datas_index_row[numero], col_cat_value)
+        if number_str in datas_index_row:
+            widget.qs_349 = qs_val.child(datas_index_row[number_str], col_cat_value)
 
-            if numero in self.allplan.attributes_dict:
+            attribute_obj = self.allplan.attributes_dict.get(number_str)
 
-                attribute_datas = self.allplan.attributes_dict.get(numero, dict)
+            if isinstance(attribute_obj, AttributeDatas):
+                widget.ui.name_349.setText(attribute_obj.name)
+                widget.ui.name_349.setToolTip(attribute_obj.tooltips)
 
-                if isinstance(attribute_datas, dict):
-                    widget.ui.name_349.setText(attribute_datas.get(code_attr_name, ""))
-                    widget.ui.name_349.setToolTip(attribute_datas.get(code_attr_tooltips, ""))
-
+        # ---------------
         # Création mapper - épaisseur
         # ---------------
 
-        numero = "346"
+        number_str = "346"
 
-        if numero in datas_index_row:
-            widget.qs_346_ind = qs_val.child(datas_index_row[numero], col_cat_index)
-            widget.qs_346_val = qs_val.child(datas_index_row[numero], col_cat_value)
+        if number_str in datas_index_row:
+            widget.qs_346_ind = qs_val.child(datas_index_row[number_str], col_cat_index)
+            widget.qs_346_val = qs_val.child(datas_index_row[number_str], col_cat_value)
 
-            if numero in self.allplan.attributes_dict:
+            attribute_obj = self.allplan.attributes_dict.get(number_str)
 
-                attribute_datas = self.allplan.attributes_dict.get(numero, dict)
+            if isinstance(attribute_obj, AttributeDatas):
+                widget.ui.name_346.setText(attribute_obj.name)
+                widget.ui.name_346.setToolTip(attribute_obj.tooltips)
 
-                if isinstance(attribute_datas, dict):
-                    widget.ui.name_346.setText(attribute_datas.get(code_attr_name, ""))
-                    widget.ui.name_346.setToolTip(attribute_datas.get(code_attr_tooltips, ""))
-
+        # ---------------
         # Création mapper - trait
         # ---------------
 
-        numero = "345"
+        number_str = "345"
 
-        if numero in datas_index_row:
-            widget.qs_345_ind = qs_val.child(datas_index_row[numero], col_cat_index)
-            widget.qs_345_val = qs_val.child(datas_index_row[numero], col_cat_value)
+        if number_str in datas_index_row:
+            widget.qs_345_ind = qs_val.child(datas_index_row[number_str], col_cat_index)
+            widget.qs_345_val = qs_val.child(datas_index_row[number_str], col_cat_value)
 
-            if numero in self.allplan.attributes_dict:
+            attribute_obj = self.allplan.attributes_dict.get(number_str)
 
-                attribute_datas = self.allplan.attributes_dict.get(numero, dict)
+            if isinstance(attribute_obj, AttributeDatas):
+                widget.ui.name_345.setText(attribute_obj.name)
+                widget.ui.name_345.setToolTip(attribute_obj.tooltips)
 
-                if isinstance(attribute_datas, dict):
-                    widget.ui.name_345.setText(attribute_datas.get(code_attr_name, ""))
-                    widget.ui.name_345.setToolTip(attribute_datas.get(code_attr_tooltips, ""))
-
+        # ---------------
         # Création mapper - couleur
         # ---------------
 
-        numero = "347"
+        number_str = "347"
 
-        if numero in datas_index_row:
-            widget.qs_347_ind = qs_val.child(datas_index_row[numero], col_cat_index)
-            widget.qs_347_val = qs_val.child(datas_index_row[numero], col_cat_value)
+        if number_str in datas_index_row:
+            widget.qs_347_ind = qs_val.child(datas_index_row[number_str], col_cat_index)
+            widget.qs_347_val = qs_val.child(datas_index_row[number_str], col_cat_value)
 
-            if numero in self.allplan.attributes_dict:
+            attribute_obj = self.allplan.attributes_dict.get(number_str)
 
-                attribute_datas = self.allplan.attributes_dict.get(numero, dict)
+            if isinstance(attribute_obj, AttributeDatas):
+                widget.ui.name_347.setText(attribute_obj.name)
+                widget.ui.name_347.setToolTip(attribute_obj.tooltips)
 
-                if isinstance(attribute_datas, dict):
-                    widget.ui.name_347.setText(attribute_datas.get(code_attr_name, ""))
-                    widget.ui.name_347.setToolTip(attribute_datas.get(code_attr_tooltips, ""))
-
+        # ---------------
         # chargement
         # ---------------
 
         widget.chargement(row_index=self.liste_details.count())
 
+        # ---------------
         # Définition signal
         # ---------------
 
-        widget.attribute_changed_signal.connect(self.catalog.undo_modify_attribute)
+        widget.attribute_changed_signal.connect(self.catalog.history_modify_attribute)
 
+        # ---------------
         # Création listwidgetitem
         # ---------------
 
-        listwidgetitem.setData(user_data_number, "141")
         listwidgetitem.setSizeHint(widget.sizeHint())
 
         self.liste_details.addItem(listwidgetitem)
@@ -671,12 +695,18 @@ class AttributesDetailLoader(QWidget):
 
     def add_filling(self, qs_val: QStandardItem, datas_index_row: dict):
 
+        # ---------------
         # Création listwidgetitem
         # ---------------
 
         listwidgetitem = QListWidgetItem(self.liste_details)
-        listwidgetitem.setData(user_data_type, type_fill)
 
+        # ------------
+
+        listwidgetitem.setData(user_data_type, type_fill)
+        listwidgetitem.setData(user_data_number, attribute_val_default_fill_first)
+
+        # ---------------
         # Création widget
         # ---------------
 
@@ -697,89 +727,87 @@ class AttributesDetailLoader(QWidget):
         widget.ui.browser_bt.installEventFilter(self)
         widget.ui.preview_bt.installEventFilter(self)
 
+        # ---------------
         # Création mapper - 118
         # ---------------
 
-        numero = "118"
+        number_str = "118"
 
-        if numero in datas_index_row:
-            widget.qs_118 = qs_val.child(datas_index_row[numero], col_cat_value)
+        if number_str in datas_index_row:
+            widget.qs_118 = qs_val.child(datas_index_row[number_str], col_cat_value)
 
-            if numero in self.allplan.attributes_dict:
+            attribute_obj = self.allplan.attributes_dict.get(number_str)
 
-                attribute_datas = self.allplan.attributes_dict.get(numero, dict)
+            if isinstance(attribute_obj, AttributeDatas):
+                widget.ui.titre_infos.setText(attribute_obj.name)
+                widget.ui.titre_infos.setToolTip(attribute_obj.tooltips)
 
-                if isinstance(attribute_datas, dict):
-                    widget.ui.titre_infos.setText(attribute_datas.get(code_attr_name, ""))
-                    widget.ui.titre_infos.setToolTip(attribute_datas.get(code_attr_tooltips, ""))
-
+        # ---------------
         # Création mapper - 111
         # ---------------
 
-        numero = "111"
+        number_str = "111"
 
-        if numero in datas_index_row:
-            widget.qs_111_val = qs_val.child(datas_index_row[numero], col_cat_value)
-            widget.qs_111_ind = qs_val.child(datas_index_row[numero], col_cat_index)
+        if number_str in datas_index_row:
+            widget.qs_111_val = qs_val.child(datas_index_row[number_str], col_cat_value)
+            widget.qs_111_ind = qs_val.child(datas_index_row[number_str], col_cat_index)
 
-            if numero in self.allplan.attributes_dict:
+            attribute_obj = self.allplan.attributes_dict.get(number_str)
 
-                attribute_datas = self.allplan.attributes_dict.get(numero, dict)
+            if isinstance(attribute_obj, AttributeDatas):
 
-                if isinstance(attribute_datas, dict):
-                    widget.ui.titre_hachurage.setText(attribute_datas.get(code_attr_name, ""))
-                    widget.ui.titre_hachurage.setToolTip(attribute_datas.get(code_attr_tooltips, ""))
+                widget.ui.titre_hachurage.setText(attribute_obj.name)
+                widget.ui.titre_hachurage.setToolTip(attribute_obj.tooltips)
 
-                    widget.ui.titre_motif.setText(attribute_datas.get(code_attr_name, ""))
-                    widget.ui.titre_motif.setToolTip(attribute_datas.get(code_attr_tooltips, ""))
+                widget.ui.titre_motif.setText(attribute_obj.name)
+                widget.ui.titre_motif.setToolTip(attribute_obj.tooltips)
 
-                    widget.ui.titre_style.setText(attribute_datas.get(code_attr_name, ""))
-                    widget.ui.titre_style.setToolTip(attribute_datas.get(code_attr_tooltips, ""))
+                widget.ui.titre_style.setText(attribute_obj.name)
+                widget.ui.titre_style.setToolTip(attribute_obj.tooltips)
 
+        # ---------------
         # Création mapper - 252
         # ---------------
-        numero = "252"
+        number_str = "252"
 
-        if numero in datas_index_row:
-            widget.qs_252_ind = qs_val.child(datas_index_row[numero], col_cat_index)
-            widget.qs_252_val = qs_val.child(datas_index_row[numero], col_cat_value)
+        if number_str in datas_index_row:
+            widget.qs_252_ind = qs_val.child(datas_index_row[number_str], col_cat_index)
+            widget.qs_252_val = qs_val.child(datas_index_row[number_str], col_cat_value)
 
-            if numero in self.allplan.attributes_dict:
+            attribute_obj = self.allplan.attributes_dict.get(number_str)
 
-                attribute_datas = self.allplan.attributes_dict.get(numero, dict)
+            if isinstance(attribute_obj, AttributeDatas):
+                widget.titre_couleur_2.setText(attribute_obj.name)
+                widget.titre_couleur_2.setToolTip(attribute_obj.tooltips)
 
-                if isinstance(attribute_datas, dict):
-                    widget.titre_couleur_2.setText(attribute_datas.get(code_attr_name, ""))
-                    widget.titre_couleur_2.setToolTip(attribute_datas.get(code_attr_tooltips, ""))
-
+        # ---------------
         # Création mapper - 336
         # ---------------
-        numero = "336"
+        number_str = "336"
 
-        if numero in datas_index_row:
-            widget.qs_336 = qs_val.child(datas_index_row[numero], col_cat_value)
+        if number_str in datas_index_row:
+            widget.qs_336 = qs_val.child(datas_index_row[number_str], col_cat_value)
 
-            if numero in self.allplan.attributes_dict:
+            attribute_obj = self.allplan.attributes_dict.get(number_str)
 
-                attribute_datas = self.allplan.attributes_dict.get(numero, dict)
+            if isinstance(attribute_obj, AttributeDatas):
+                widget.ui.titre_surface.setText(attribute_obj.name)
+                widget.ui.titre_surface.setToolTip(attribute_obj.tooltips)
 
-                if isinstance(attribute_datas, dict):
-                    widget.ui.titre_surface.setText(attribute_datas.get(code_attr_name, ""))
-                    widget.ui.titre_surface.setToolTip(attribute_datas.get(code_attr_tooltips, ""))
-
+        # ---------------
         # chargement
         # ---------------
         widget.chargement(row_index=self.liste_details.count())
 
+        # ---------------
         # Définition signal
         # ---------------
 
-        widget.attribute_changed_signal.connect(self.catalog.undo_modify_attribute)
+        widget.attribute_changed_signal.connect(self.catalog.history_modify_attribute)
 
+        # ---------------
         # Création listwidgetitem
         # ---------------
-
-        listwidgetitem.setData(user_data_number, attribute_val_default_fill_first)
 
         listwidgetitem.setSizeHint(widget.sizeHint())
 
@@ -790,12 +818,18 @@ class AttributesDetailLoader(QWidget):
 
     def add_room(self, qs_val: QStandardItem, datas_index_row: dict):
 
+        # ---------------
         # Création listwidgetitem
         # ---------------
 
         listwidgetitem = QListWidgetItem(self.liste_details)
-        listwidgetitem.setData(user_data_type, type_room)
 
+        # ------------
+
+        listwidgetitem.setData(user_data_type, type_room)
+        listwidgetitem.setData(user_data_number, attribute_val_default_room_first)
+
+        # ---------------
         # Création widget
         # ---------------
 
@@ -816,142 +850,191 @@ class AttributesDetailLoader(QWidget):
         widget.ui.bt_232.installEventFilter(self)
         widget.ui.bt_233.installEventFilter(self)
 
+        # ---------------
         # Création mapper - Pourtour de salle
         # ---------------
 
-        numero = "231"
+        number_str = "231"
 
-        if numero in datas_index_row:
-            widget.qs_231_ind = qs_val.child(datas_index_row[numero], col_cat_index)
-            widget.qs_231_val = qs_val.child(datas_index_row[numero], col_cat_value)
+        if number_str in datas_index_row:
+            widget.qs_231_ind = qs_val.child(datas_index_row[number_str], col_cat_index)
+            widget.qs_231_val = qs_val.child(datas_index_row[number_str], col_cat_value)
 
-            if numero in self.allplan.attributes_dict:
+            attribute_obj = self.allplan.attributes_dict.get(number_str)
 
-                attribute_datas = self.allplan.attributes_dict.get(numero, dict)
+            if isinstance(attribute_obj, AttributeDatas):
+                widget.ui.titre_231.setText(attribute_obj.name)
+                widget.ui.titre_231.setToolTip(attribute_obj.tooltips)
 
-                if isinstance(attribute_datas, dict):
-                    widget.ui.titre_231.setText(attribute_datas.get(code_attr_name, ""))
-                    widget.ui.titre_231.setToolTip(attribute_datas.get(code_attr_tooltips, ""))
-
+        # ---------------
         # Création mapper - type d'utilisation
         # ---------------
 
-        numero = "235"
+        number_str = "235"
 
-        if numero in datas_index_row:
-            widget.qs_235_ind = qs_val.child(datas_index_row[numero], col_cat_index)
-            widget.qs_235_val = qs_val.child(datas_index_row[numero], col_cat_value)
+        if number_str in datas_index_row:
+            widget.qs_235_ind = qs_val.child(datas_index_row[number_str], col_cat_index)
+            widget.qs_235_val = qs_val.child(datas_index_row[number_str], col_cat_value)
 
-            if numero in self.allplan.attributes_dict:
+            attribute_obj = self.allplan.attributes_dict.get(number_str)
 
-                attribute_datas = self.allplan.attributes_dict.get(numero, dict)
+            if isinstance(attribute_obj, AttributeDatas):
+                widget.ui.titre_235.setText(attribute_obj.name)
+                widget.ui.titre_235.setToolTip(attribute_obj.tooltips)
 
-                if isinstance(attribute_datas, dict):
-                    widget.ui.titre_235.setText(attribute_datas.get(code_attr_name, ""))
-                    widget.ui.titre_235.setToolTip(attribute_datas.get(code_attr_tooltips, ""))
+            widget.qstandarditem_349 = qs_val.child(datas_index_row[number_str], col_cat_value)
 
-            widget.qstandarditem_349 = qs_val.child(datas_index_row[numero], col_cat_value)
-
+        # ---------------
         # Création mapper - Type de surface
         # ---------------
 
-        numero = "232"
+        number_str = "232"
 
-        if numero in datas_index_row:
-            widget.qs_232_ind = qs_val.child(datas_index_row[numero], col_cat_index)
-            widget.qs_232_val = qs_val.child(datas_index_row[numero], col_cat_value)
+        if number_str in datas_index_row:
+            widget.qs_232_ind = qs_val.child(datas_index_row[number_str], col_cat_index)
+            widget.qs_232_val = qs_val.child(datas_index_row[number_str], col_cat_value)
 
-            if numero in self.allplan.attributes_dict:
+            attribute_obj = self.allplan.attributes_dict.get(number_str)
 
-                attribute_datas = self.allplan.attributes_dict.get(numero, dict)
+            if isinstance(attribute_obj, AttributeDatas):
+                widget.ui.titre_232.setText(attribute_obj.name)
+                widget.ui.titre_232.setToolTip(attribute_obj.tooltips)
 
-                if isinstance(attribute_datas, dict):
-                    widget.ui.titre_232.setText(attribute_datas.get(code_attr_name, ""))
-                    widget.ui.titre_232.setToolTip(attribute_datas.get(code_attr_tooltips, ""))
-
+        # ---------------
         # Création mapper - facteur_din
         # ---------------
 
-        numero = "266"
+        number_str = "266"
 
-        if numero in datas_index_row:
-            widget.qs_266 = qs_val.child(datas_index_row[numero], col_cat_value)
+        if number_str in datas_index_row:
+            widget.qs_266 = qs_val.child(datas_index_row[number_str], col_cat_value)
 
-            if numero in self.allplan.attributes_dict:
+            attribute_obj = self.allplan.attributes_dict.get(number_str)
 
-                attribute_datas = self.allplan.attributes_dict.get(numero, dict)
+            if isinstance(attribute_obj, AttributeDatas):
+                widget.ui.titre_266.setText(attribute_obj.name)
+                widget.ui.titre_266.setToolTip(attribute_obj.tooltips)
 
-                if isinstance(attribute_datas, dict):
-                    widget.ui.titre_266.setText(attribute_datas.get(code_attr_name, ""))
-                    widget.ui.titre_266.setToolTip(attribute_datas.get(code_attr_tooltips, ""))
-
+        # ---------------
         # Création mapper - Type surface habitable
         # ---------------
 
-        numero = "233"
+        number_str = "233"
 
-        if numero in datas_index_row:
-            widget.qs_233_ind = qs_val.child(datas_index_row[numero], col_cat_index)
-            widget.qs_233_val = qs_val.child(datas_index_row[numero], col_cat_value)
+        if number_str in datas_index_row:
+            widget.qs_233_ind = qs_val.child(datas_index_row[number_str], col_cat_index)
+            widget.qs_233_val = qs_val.child(datas_index_row[number_str], col_cat_value)
 
-            if numero in self.allplan.attributes_dict:
+            attribute_obj = self.allplan.attributes_dict.get(number_str)
 
-                attribute_datas = self.allplan.attributes_dict.get(numero, dict)
+            if isinstance(attribute_obj, AttributeDatas):
+                widget.ui.titre_233.setText(attribute_obj.name)
+                widget.ui.titre_233.setToolTip(attribute_obj.tooltips)
 
-                if isinstance(attribute_datas, dict):
-                    widget.ui.titre_233.setText(attribute_datas.get(code_attr_name, ""))
-                    widget.ui.titre_233.setToolTip(attribute_datas.get(code_attr_tooltips, ""))
-
+        # ---------------
         # Création mapper - facteur_surface_hab
         # ---------------
 
-        numero = "264"
+        number_str = "264"
 
-        if numero in datas_index_row:
-            widget.qs_264 = qs_val.child(datas_index_row[numero], col_cat_value)
+        if number_str in datas_index_row:
+            widget.qs_264 = qs_val.child(datas_index_row[number_str], col_cat_value)
 
-            if numero in self.allplan.attributes_dict:
+            attribute_obj = self.allplan.attributes_dict.get(number_str)
 
-                attribute_datas = self.allplan.attributes_dict.get(numero, dict)
+            if isinstance(attribute_obj, AttributeDatas):
+                widget.ui.titre_264.setText(attribute_obj.name)
+                widget.ui.titre_264.setToolTip(attribute_obj.tooltips)
 
-                if isinstance(attribute_datas, dict):
-                    widget.ui.titre_264.setText(attribute_datas.get(code_attr_name, ""))
-                    widget.ui.titre_264.setToolTip(attribute_datas.get(code_attr_tooltips, ""))
-
+        # ---------------
         # Définition variable
         # ---------------
 
         widget.chargement()
 
+        # ---------------
         # Définition signal
         # ---------------
 
-        widget.attribute_changed_signal.connect(self.catalog.undo_modify_attribute)
+        widget.attribute_changed_signal.connect(self.catalog.history_modify_attribute)
 
+        # ---------------
         # Création listwidgetitem
         # ---------------
 
-        listwidgetitem.setData(user_data_number, "231")
         listwidgetitem.setSizeHint(widget.sizeHint())
 
         self.liste_details.addItem(listwidgetitem)
         self.liste_details.setItemWidget(listwidgetitem, widget)
 
+    def add_unknown(self, attribute_obj: AttributeDatas, value: str):
+
+        if not isinstance(value, str):
+            value = ""
+
+        # ------------------------
+        # Creation listwidgetitem
+        # ------------------------
+
+        listwidgetitem = QListWidgetItem(self.liste_details)
+
+        # ---------------
+
+        listwidgetitem.setData(user_data_type, type_unknown)
+        listwidgetitem.setData(user_data_number, attribute_obj.number)
+
+        # ------------------------
+        # Creation widget
+        # ------------------------
+
+        widget = AttributeUnknown(attribute_obj=attribute_obj, value=value)
+
+        # ------------------------
+        # Creation signals
+        # ------------------------
+
+        widget.ui.value_attrib.installEventFilter(self)
+
+        # ---------------
+        # Création listwidgetitem
+        # ---------------
+
+        listwidgetitem.setSizeHint(widget.sizeHint())
+        listwidgetitem.setSizeHint(QSize(widget.width(), 40))
+
+        self.liste_details.addItem(listwidgetitem)
+        self.liste_details.setItemWidget(listwidgetitem, widget)
+
+        # ---------------
+
     def add_title(self, title: str):
 
+        # ---------------
         # Création listwidgetitem
         # ---------------
 
         listwidgetitem = QListWidgetItem(self.liste_details)
-
         listwidgetitem.setFlags(listwidgetitem.flags() & ~Qt.ItemIsSelectable)
+
+        # ------------
+
+        listwidgetitem.setData(user_data_type, type_title)
+        listwidgetitem.setData(user_data_number, type_title)
+
+        # ------------------------
+        # Creation widget
+        # ------------------------
 
         widget = AttributeTitle(self.asc, title=title)
 
-        # ---------------------
+        # ------------------------
+        # Creation signals
+        # ------------------------
 
         widget.ui.attribute_add_bt.clicked.connect(self.asc.action_bar.attributs_ajouter)
         widget.ui.attribute_add_bt.customContextMenuRequested.connect(self.asc.action_bar.attributs_ajouter)
+
+        # ---------------
 
         widget.ui.order_19.clicked.connect(
             lambda: self.asc.action_bar.attributes_order_changed(attributes_order=0,
@@ -980,8 +1063,11 @@ class AttributesDetailLoader(QWidget):
 
         widget.ui.order_setting.clicked.connect(self.asc.action_bar.attributes_order_custom_clicked)
 
-        listwidgetitem.setSizeHint(widget.sizeHint())
+        # ---------------
+        # Création listwidgetitem
+        # ---------------
 
+        listwidgetitem.setSizeHint(widget.sizeHint())
         listwidgetitem.setSizeHint(QSize(widget.width(), 40))
 
         self.liste_details.addItem(listwidgetitem)

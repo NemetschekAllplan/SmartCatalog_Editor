@@ -198,7 +198,7 @@ class HelpWidget(QWidget):
             tags=list())
 
         qs_allplan_005 = self.help_add_article(
-            title=self.tr("Rafraichir les données d'Allplan"),
+            title=self.tr("Rafraichir les données Allplan"),
             link=help_allplan_refresh,
             tags=list())
 

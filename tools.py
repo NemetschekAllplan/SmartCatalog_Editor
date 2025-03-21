@@ -1,24 +1,43 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*
 import glob
+import io
 import json
+import os.path
 import platform
 import shutil
 import subprocess
+import urllib.request
 import webbrowser
 from collections import OrderedDict, Counter
 from datetime import datetime
+from io import BytesIO
 from typing import Union
 
-import lxml
+import clr
+import openpyxl
+import requests
+from ftfy import fix_text
 from lxml import etree
 from send2trash import send2trash
 
 from main_datas import *
-from message import WidgetMessage
 from translation_manage import get_favorites_allplan_dict
+from ui_message import Ui_Message
 
-from ftfy import fix_text
+try:
+
+    # noinspection PyUnresolvedReferences
+    clr.AddReference("System.Windows.Forms")
+
+    # noinspection PyUnresolvedReferences
+    from System.Windows.Forms import OpenFileDialog, SaveFileDialog, FileDialogCustomPlace, DialogResult
+
+    load_ok = True
+
+except Exception as error2:
+    print(f"browser -- get_common_dialog_path -- {error2}")
+    load_ok = False
 
 invalid_chars = ("<", ">", ":", '"', "/", "\\", "|", "?", "*")
 
@@ -37,21 +56,23 @@ def a___________________validateurs_______________():
 
 class ValidatorModel(QValidator):
 
-    def __init__(self, model):
+    def __init__(self, model, column_index=0):
         QValidator.__init__(self)
         self.model: QStandardItemModel = model
+        self.column_index = column_index
 
     def validate(self, p_str: str, p_int: int):
 
         # Si ce que l'utilisateur a tapé est exactement un élément de la liste, alors c'est 100 % acceptable
-        recherche = self.model.findItems(p_str, Qt.MatchExactly, 1)
+        recherche = self.model.findItems(p_str, Qt.MatchExactly, self.column_index)
+
         if len(recherche) == 1:
             return QValidator.Acceptable, p_str, p_int
 
         # Si c'est le début d'au moins 1 élément de la liste, c'est Intermediate (probablement
         # acceptable + tard, mais pas encore certain)
         try:
-            recherche = self.model.findItems(p_str, Qt.MatchContains, 1)
+            recherche = self.model.findItems(p_str, Qt.MatchContains, self.column_index)
 
             if len(recherche) > 0:
                 return QValidator.Intermediate, p_str, p_int
@@ -352,6 +373,718 @@ class MyContextMenu(QMenu):
 
         self.help_request.emit(short_link)
 
+    @staticmethod
+    def a___________________end______():
+        pass
+
+
+def a___________________message_______________():
+    pass
+
+
+class WidgetMessage(QDialog):
+
+    def __init__(self):
+        super().__init__()
+
+        # Chargement de l'interface
+        self.ui = Ui_Message()
+        self.ui.setupUi(self)
+
+        self.setWindowModality(Qt.ApplicationModal)
+        self.setWindowFlags(Qt.WindowStaysOnTopHint)
+
+        self.ui.bt_oui.clicked.connect(self.bouton_oui_clicked)
+        self.ui.bt_non.clicked.connect(self.bouton_non_clicked)
+        self.ui.bt_save.clicked.connect(self.bouton_save_clicked)
+        self.ui.bt_annuler.clicked.connect(self.bouton_annuler_clicked)
+
+        self.deplier_actif = False
+        self.avec_checkbox = False
+        self.save = False
+
+        self.reponse = None
+        self.check = False
+
+        self.ht_defaut = 104
+        self.ht_chk = 123
+        self.ht_details_chk = 126
+        self.ht_details = 225
+
+        self.resize(QSize(300, self.ht_defaut))
+
+        self.ui.bt_deplier.clicked.connect(self.gestion_deplier)
+
+        self.ui.copy.clicked.connect(self.message_copy)
+        self.ui.save.clicked.connect(self.message_save)
+
+    def show_message(self, title: str, message: str, infos="",
+                     type_bouton=None, defaut_bouton=None,
+                     bt_oui=str(), bt_non=str(), bt_annuler=True,
+                     icone_question=False, icone_avertissement=False, icone_critique=False, icone_valide=False,
+                     icone_sauvegarde=False, icone_lock=False, icone_ouvrir=False,
+                     details=None, txt_save=str(), afficher_details=False):
+        """
+        Permet d'afficher un message
+        :param title: Titre de la fenêtre
+        :param message: Message à afficher
+        :param infos: Checkbox pour ne plus afficher -> nom de l'élément dans la base de registre
+        :param type_bouton: Défini le type de bouton :
+                            QMessageBox.Ok | QMessageBox.No | QMessageBox.Cancel | QMessageBox.Save)
+
+        :param defaut_bouton: Défini le bouton par défaut à selectionner
+        :param bt_oui: Texte du bouton oui -> QMessageBox.Ok
+        :param bt_non: Texte du bouton non -> QMessageBox.No
+        :param bt_annuler: (obsolète)
+        :param icone_question: Permet d'afficher l'icône de question
+        :param icone_avertissement: Permet d'afficher l'icône de l'avertissement
+        :param icone_critique: Permet d'afficher l'icône d'une erreur critique
+        :param icone_valide: Permet d'afficher l'icône pour la validation (OK)
+        :param icone_sauvegarde: Permet d'affciher l'icône de sauvegarde
+        :param icone_lock: Permet d'affciher l'icône de sauvegarde
+        :param icone_ouvrir: Permet d'afficher l'icône ouvrir
+        :param details: Permet d'afficher plus de détails
+        :param txt_save: Permet d'afficher et de modifier le texte -> QMessageBox.Save
+        :param afficher_details: Bool permettant d'afficher ou masquer les détails (défaut false)
+        :return: None
+        """
+
+        # Gestion du titre
+        self.setWindowTitle(title)
+
+        # Gestion du message
+        self.ui.message.setText(message)
+        # Gestion icône
+        self.gestion_icone(icone_question,
+                           icone_avertissement,
+                           icone_critique,
+                           icone_valide,
+                           icone_sauvegarde,
+                           icone_lock,
+                           icone_ouvrir)
+
+        # Gestion boutons
+        self.gestions_boutons(type_bouton, defaut_bouton, bt_oui, bt_non, bt_annuler, txt_save)
+
+        # Gestion checkbox
+        self.gestion_checkbox(infos)
+
+        # Géstion détails
+        self.gestion_details(details, not afficher_details)
+
+        self.exec()
+
+    def gestion_icone(self, icone_question: bool, icone_avertissement: bool, icone_critique: bool, icone_valide,
+                      icone_sauvegarde: bool, icone_lock: bool, icone_ouvrir: bool):
+        """
+        Permet de gérer les icônes
+        :param icone_question: Permet d'afficher l'icône de question
+        :param icone_avertissement: Permet d'afficher l'icône de l'avertissement
+        :param icone_critique: Permet d'afficher l'icône d'une erreur critique
+        :param icone_valide: Permet d'afficher l'icône pour la validation (OK)
+        :param icone_sauvegarde: Permet d'affciher l'icône de sauvegarde
+        :param icone_lock: Permet d'affciher l'icône cadenas
+        :param icone_ouvrir: Permet d'afficher l'icône Ouvrir
+        :return: None
+        """
+
+        image = information_icon
+
+        if icone_question:
+            image = help_icon
+
+        elif icone_avertissement:
+            image = warning_icon
+
+        elif icone_critique:
+            image = error_icon
+
+        elif icone_valide:
+            image = valid_icon
+
+        elif icone_sauvegarde:
+            image = save_icon
+
+        elif icone_lock:
+            image = lock_icon
+
+        elif icone_ouvrir:
+            image = open_icon
+
+        self.ui.icon.setIcon(get_icon(image))
+
+    def gestions_boutons(self, type_bouton=None, defaut_bouton=None,
+                         bt_oui=str(), bt_non=str(), bt_annuler=True, txt_save=str()):
+
+        """
+        Permet de gérer les textes et l'affichage des boutons
+        :param type_bouton: Défini le type de bouton
+        :param defaut_bouton: Défini le bouton par défaut à selectionner
+        :param bt_oui: Texte du bouton oui -> QMessageBox.Ok
+        :param bt_non: Texte du bouton non -> QMessageBox.No
+        :param bt_annuler: Permet de cacher le bouton annuler -> QMessageBox.Cancel
+        :param txt_save: Permet de changer le nom save -> QMessageBox.Save
+        :return: None
+        """
+
+        if type_bouton is not None:
+
+            # Bouton seul (4)
+            if type_bouton == QMessageBox.No:
+                self.ui.bt_oui.setVisible(False)
+                self.ui.bt_annuler.setVisible(False)
+                self.ui.bt_save.setVisible(False)
+
+            elif type_bouton == QMessageBox.Save:
+                self.ui.bt_oui.setVisible(False)
+                self.ui.bt_non.setVisible(False)
+                self.ui.bt_annuler.setVisible(False)
+
+            elif type_bouton == QMessageBox.Cancel:
+                self.ui.bt_oui.setVisible(False)
+                self.ui.bt_non.setVisible(False)
+                self.ui.bt_save.setVisible(False)
+
+            # Bouton OK (3)
+            elif type_bouton == QMessageBox.Ok | QMessageBox.No:
+                self.ui.bt_annuler.setVisible(False)
+                self.ui.bt_save.setVisible(False)
+
+            elif type_bouton == QMessageBox.Ok | QMessageBox.Save:
+                self.ui.bt_annuler.setVisible(False)
+                self.ui.bt_non.setVisible(False)
+
+            elif type_bouton == QMessageBox.Ok | QMessageBox.Cancel:
+                self.ui.bt_non.setVisible(False)
+                self.ui.bt_save.setVisible(False)
+
+            # Bouton non (2)
+            elif type_bouton == QMessageBox.No | QMessageBox.Save:
+                self.ui.bt_oui.setVisible(False)
+                self.ui.bt_annuler.setVisible(False)
+
+            elif type_bouton == QMessageBox.No | QMessageBox.Cancel:
+                self.ui.bt_oui.setVisible(False)
+                self.ui.bt_save.setVisible(False)
+
+            # Bouton save (1)
+            elif type_bouton == QMessageBox.Save | QMessageBox.Cancel:
+                self.ui.bt_oui.setVisible(False)
+                self.ui.bt_non.setVisible(False)
+
+            # Bouton triple
+            elif type_bouton == QMessageBox.Ok | QMessageBox.Save | QMessageBox.Cancel:
+                self.ui.bt_non.setVisible(False)
+
+            elif type_bouton == QMessageBox.Ok | QMessageBox.No | QMessageBox.Save:
+                self.ui.bt_annuler.setVisible(False)
+
+            elif type_bouton == QMessageBox.Ok | QMessageBox.No | QMessageBox.Cancel:
+                self.ui.bt_save.setVisible(False)
+
+            elif type_bouton == QMessageBox.Ok | QMessageBox.Save | QMessageBox.Cancel:
+                self.ui.bt_non.setVisible(False)
+
+            elif type_bouton == QMessageBox.No | QMessageBox.Save | QMessageBox.Cancel:
+                self.ui.bt_oui.setVisible(False)
+
+            elif type_bouton == QMessageBox.Ok | QMessageBox.No | QMessageBox.Save | QMessageBox.Cancel:
+                pass
+
+            else:
+                self.ui.bt_non.setVisible(False)
+                self.ui.bt_annuler.setVisible(False)
+                self.ui.bt_oui.setText("OK")
+
+        else:
+
+            if (bt_oui == "" or bt_oui == "Ok") and bt_non == "" and txt_save == "":
+                self.ui.bt_non.setVisible(False)
+                self.ui.bt_annuler.setVisible(False)
+                self.ui.bt_oui.setText("OK")
+
+        self.ui.bt_oui.setFocus()
+
+        if defaut_bouton is not None:
+
+            if defaut_bouton == QMessageBox.No:
+                self.ui.bt_non.setFocus()
+
+            elif defaut_bouton == QMessageBox.Save:
+                self.ui.bt_save.setFocus()
+
+            elif defaut_bouton == QMessageBox.Cancel:
+                self.ui.bt_annuler.setFocus()
+
+        if bt_oui != "":
+            self.ui.bt_oui.setText(f" {bt_oui} ")
+
+        if bt_non != "":
+            self.ui.bt_non.setText(f" {bt_non} ")
+
+        if txt_save != "":
+            self.ui.bt_save.setVisible(True)
+            self.ui.bt_save.setText(f" {txt_save} ")
+
+        else:
+            self.ui.bt_save.setVisible(False)
+
+        if not bt_annuler:
+            pass
+
+        self.sizeHint()
+
+    def gestion_checkbox(self, infos: str):
+        """
+        Permet de gérer l'affichage de la checkbox
+        :param infos: Checkbox pour ne plus afficher -> nom de l'élément dans la base de registre
+        :return: None
+        """
+
+        if infos == "":
+            self.ui.infos_widget.setVisible(False)
+            return
+
+        self.avec_checkbox = True
+
+    def gestion_details(self, details, afficher_details):
+        """
+        Permet de gérer l'affichage du détail
+        :param details: Permet d'afficher plus de détails
+        :param afficher_details: Permet d'afficher plus de détails
+        :return:
+        """
+
+        texte = ""
+
+        if isinstance(details, list):
+
+            nb_caractere = 3
+
+            try:
+                nb_items = str(len(details))
+                nb_caractere = len(nb_items)
+
+            except ValueError:
+                pass
+
+            for index_item in range(len(details)):
+
+                try:
+
+                    index_str = str(index_item)
+                    index_str = index_str.zfill(nb_caractere)
+
+                except ValueError:
+                    index_str = f"{index_item}"
+
+                texte += f"{index_str} ==> {details[index_item]}\n"
+
+        elif isinstance(details, dict):
+
+            for key in details.keys():
+                texte += f"{key} ==> {details[key]}\n"
+
+        else:
+
+            texte = details
+
+        self.deplier_actif = afficher_details
+
+        if details is None or details == "":
+            self.ui.bt_deplier.setVisible(False)
+            self.ui.details_widget.setVisible(False)
+
+            self.ui.details.clear()
+
+            self.deplier_actif = False
+
+            return
+
+        self.ui.bt_deplier.setVisible(True)
+
+        self.ui.details.setText(f"{texte}")
+
+        self.gestion_deplier()
+
+    def gestion_deplier(self):
+        """
+        Permet de gérer l'affichage de l'icône pour déplier et replier les détails
+        :return: None
+        """
+
+        self.deplier_actif = not self.deplier_actif
+
+        self.setMaximumHeight(16777215)
+        self.ui.details_widget.setVisible(self.deplier_actif)
+
+        if self.deplier_actif:
+            self.ui.bt_deplier.setIcon(get_icon(detail_hide_icon))
+
+            height = self.ui.message_widget.height()
+
+            if height < 40:
+                height = 40
+
+            self.ui.message_widget.setMaximumHeight(height)
+            return
+
+        self.ui.bt_deplier.setIcon(get_icon(detail_show_icon))
+
+        self.ui.message_widget.setMaximumHeight(16777215)
+
+        self.adjustSize()
+
+        self.resize(self.width(), 0)
+        self.setMaximumHeight(self.height())
+
+    def bouton_oui_clicked(self):
+        """
+        Permet de mettre en mémoire la réponse de l'utilisateur = OK
+        :return: None
+        """
+        self.save = True
+        self.reponse = QMessageBox.Ok
+        self.check = self.ui.checkbox.isChecked()
+        # print(f"bouton_ok_clicked -- checkbox == {self.ui.checkbox.isChecked()}")
+        self.close()
+
+    def bouton_non_clicked(self):
+        """
+        Permet de mettre en mémoire la réponse de l'utilisateur = No
+        :return:None
+        """
+
+        self.save = True
+        self.reponse = QMessageBox.No
+        self.check = self.ui.checkbox.isChecked()
+
+        # print(f"bouton_no_clicked -- checkbox == {self.ui.checkbox.isChecked()}")
+        self.close()
+
+    def message_copy(self):
+
+        text = self.ui.details.toPlainText()
+
+        if not isinstance(text, str):
+            return
+
+        QApplication.clipboard().setText(text)
+
+    def message_save(self):
+
+        shortcuts_list = [asc_export_path]
+
+        a = QCoreApplication.translate("tools", "Fichier")
+
+        file_path = browser_file(parent=self,
+                                 title=application_title,
+                                 datas_filters={f"{a} TXT": [".txt"]},
+                                 registry=[app_setting_file, "path_export"],
+                                 shortcuts_list=shortcuts_list,
+                                 current_path=asc_export_path,
+                                 default_path="",
+                                 use_setting_first=True,
+                                 use_save=True)
+
+        if file_path == "":
+            return
+
+        text = self.ui.details.toPlainText()
+
+        if not isinstance(text, str):
+            return
+
+        try:
+            with open(file_path, "w", encoding="UTF-8") as file:
+                file.write(text)
+
+        except Exception as error:
+            print(f"message -- WidgetMessage -- message_save -- error : {error}")
+
+    def bouton_annuler_clicked(self):
+        """
+        Permet de mettre en mémoire la réponse de l'utilisateur = Cancel
+        :return: None
+        """
+
+        self.save = True
+        self.reponse = QMessageBox.Cancel
+        self.check = self.ui.checkbox.isChecked()
+
+        # print(f"bouton_cancel_clicked -- checkbox == {self.ui.checkbox.isChecked()}")
+
+        self.close()
+
+    def bouton_save_clicked(self):
+        """
+        Permet de mettre en mémoire la réponse de l'utilisateur = Save
+        :return: None
+        """
+
+        self.save = True
+        self.reponse = QMessageBox.Save
+        self.check = self.ui.checkbox.isChecked()
+
+        # print(f"bouton_cancel_clicked -- checkbox == {self.ui.checkbox.isChecked()}")
+
+        self.close()
+
+    @staticmethod
+    def a___________________event______():
+        pass
+
+    def closeEvent(self, event: QCloseEvent):
+
+        if not self.save:
+            self.reponse = QMessageBox.Cancel
+            self.check = False
+
+        super().closeEvent(event)
+
+    @staticmethod
+    def a___________________end______():
+        pass
+
+
+def a___________________browser_______________():
+    pass
+
+
+def browser_file(parent: QObject, title: str, datas_filters: dict, registry: list, shortcuts_list: list,
+                 current_path="", default_path="",
+                 file_name="", use_setting_first=True, use_save=False) -> str:
+    """
+
+    :param parent: Objet parent
+    :param title: Title of dialog
+    :param datas_filters:  {"Images" : [".png", ".jpg"], "Pdf" : [".pdf"]}
+    :param registry: [file_setting_name, setting_name]
+    :param shortcuts_list: shortcut paths list
+    :param current_path: current_path
+    :param default_path: default_path
+    :param file_name: file_name
+    :param use_setting_first: True = searh in the registry + current + default // False = current + registry + default
+    :param use_save: bool : False = for select file // True = For save file
+    :return: Path of select file or empty text
+    """
+
+    if not isinstance(title, str) or not isinstance(current_path, str) or not isinstance(default_path, str):
+        print(f"browser -- browser_file -- not isinstance(title, str)")
+        return ""
+
+    if not isinstance(datas_filters, dict) or not isinstance(registry, list) or not isinstance(shortcuts_list, list):
+        print(f"browser -- browser_file -- not isinstance(title, str)")
+        return ""
+
+    if not isinstance(file_name, str) or not isinstance(use_setting_first, bool) or not isinstance(use_save, bool):
+        print(f"browser -- browser_file -- not isinstance(file_name, str)")
+        return ""
+
+    current_folder = find_folder_path(current_path)
+
+    default_folder = find_folder_path(default_path)
+
+    if len(registry) != 2:
+        settings_folder = default_folder
+    else:
+        settings_folder = settings_get(file_name=registry[0], info_name=registry[1])
+
+        if settings_folder is None:
+            settings_folder = default_folder
+
+    target_folder = ""
+
+    if not use_setting_first:
+
+        if current_folder != "" and current_folder != "\\" and os.path.exists(current_folder):
+
+            target_folder = f"{current_folder}{file_name}"
+
+        else:
+
+            if settings_folder != "" and settings_folder != "\\" and os.path.exists(settings_folder):
+
+                target_folder = f"{settings_folder}{file_name}"
+
+            else:
+
+                if default_folder != "" and default_folder != "\\" and os.path.exists(default_folder):
+                    target_folder = f"{default_folder}{file_name}"
+
+    else:
+
+        if settings_folder != "" and settings_folder != "\\" and os.path.exists(settings_folder):
+
+            target_folder = f"{settings_folder}{file_name}"
+
+        else:
+
+            if current_folder != "" and current_folder != "\\" and os.path.exists(current_folder):
+
+                target_folder = f"{current_folder}{file_name}"
+
+            else:
+
+                if default_folder != "" and default_folder != "\\" and os.path.exists(default_folder):
+                    target_folder = f"{default_folder}{file_name}"
+
+    if load_ok == "":
+
+        file_path = browser_file_classic(parent=parent,
+                                         title=title,
+                                         datas_filters=datas_filters,
+                                         target_folder=target_folder,
+                                         use_save=use_save)
+    else:
+
+        file_path = browser_file_new(title=title,
+                                     datas_filters=datas_filters,
+                                     shortcuts_list=shortcuts_list,
+                                     target_folder=target_folder,
+                                     use_save=use_save)
+
+    if file_name == file_path:
+        return ""
+
+    if file_path == "":
+        return ""
+
+    folder_current = find_folder_path(file_path)
+
+    if folder_current != "" and folder_current != "\\":
+        if len(registry) == 2:
+            settings_save_value(file_name=registry[0], key_name=registry[1], value=folder_current)
+
+    file_path: str = file_path.replace("/", "\\")
+
+    return file_path
+
+    # if accepter_tous:
+    #     return chemin_fichier
+    #
+    # if use_save:
+    #
+    #     if len(liste_extensions) == 0:
+    #         return chemin_fichier
+    #
+    #     extension_actuelle = liste_extensions[0]
+    #
+    #     if chemin_fichier.endswith(extension_actuelle):
+    #         return chemin_fichier
+    #
+    #     chemin_fichier += extension_actuelle
+    #     return chemin_fichier
+    #
+    # for extension in liste_extensions:
+    #
+    #     extension: str
+    #     fichier_upper = chemin_fichier.upper()
+    #
+    #     if fichier_upper.endswith(extension.upper()):
+    #         return chemin_fichier
+    #
+    # afficher_message(titre=parent.tr("Erreur extension de fichier"),
+    #                  message=parent.tr("L'extension du fichier est non valide !"),
+    #                  icone_avertissement=True)
+    #
+    # return ""
+
+
+def browser_file_classic(parent: QObject, title: str, datas_filters: dict, target_folder: str, use_save=False) -> str:
+    extensions_list = list()
+    filters_list = list()
+
+    for filter_title, extensions in datas_filters.items():
+
+        for extension in extensions:
+
+            if extension == ".*":
+                extensions_list.clear()
+                break
+
+            if extension in extensions_list:
+                continue
+
+            extensions_list.append(extension)
+
+        extensions: list
+        extension_str = f'*{" *".join(extensions)}'
+        filters_list.append(f'{filter_title} ({extension_str})')
+
+    filter_str = ";;".join(filters_list)
+
+    if not use_save:
+
+        file_path, _filter = QFileDialog.getOpenFileName(parent=parent,
+                                                         caption=title,
+                                                         directory=target_folder,
+                                                         filter=filter_str)
+    else:
+
+        file_path, _filter = QFileDialog.getSaveFileName(parent=parent,
+                                                         caption=title,
+                                                         directory=target_folder,
+                                                         filter=filter_str)
+
+    if not isinstance(file_path, str):
+        return ""
+
+    if file_path == "":
+        return ""
+
+    return file_path
+
+
+def browser_file_new(title: str, datas_filters: dict, shortcuts_list: list, target_folder: str, use_save=False) -> str:
+    filter_extensions = list()
+
+    for title_filter, extensions in datas_filters.items():
+
+        if not isinstance(extensions, list):
+            print(f"browser -- browser_file2 -- not isinstance(extensions, list)")
+            continue
+
+        filter_extensions.append(f"{title_filter} (*{';*'.join(extensions)})|*{';*'.join(extensions)}")
+
+    filters = "|".join(filter_extensions)
+
+    # ------------------------------------------
+    try:
+
+        if use_save:
+            dlg = SaveFileDialog()
+        else:
+            dlg = OpenFileDialog()
+
+        dlg.CheckFileExists = not use_save
+
+        dlg.Title = title
+        dlg.Filter = filters
+
+        dlg.InitialDirectory = find_folder_path(file_path=target_folder)
+
+        dlg.FileName = find_filename(file_path=target_folder, with_ext=True)
+
+        for path in shortcuts_list:
+            dlg.CustomPlaces.Add(FileDialogCustomPlace(path))
+
+        result = dlg.ShowDialog()
+
+        if result == DialogResult.Cancel:
+            return ""
+
+        filename = dlg.FileName
+
+        if not isinstance(filename, str):
+            return ""
+
+        return filename
+
+    except Exception as error:
+        print(f"browser -- browser_file2 -- error : {error}")
+        return ""
+
 
 def a___________________formatages_______________():
     pass
@@ -380,7 +1113,7 @@ def date_formatting(date_texte: str) -> str:
 
     if date_texte.count("/") != 2:
         afficher_message(titre=application_title,
-                         message=QCoreApplication.translate("outils", "Le nombre de ' / ' n'est pas correct, désolé!"),
+                         message=QCoreApplication.translate("tools", "Le nombre de ' / ' n'est pas correct, désolé!"),
                          icone_avertissement=True)
         return ""
 
@@ -399,14 +1132,14 @@ def date_formatting(date_texte: str) -> str:
 
     if jour_int == 0:
         afficher_message(titre=application_title,
-                         message=QCoreApplication.translate("outils",
+                         message=QCoreApplication.translate("tools",
                                                             "Le numéro du jour est non valide (égale à 0), désolé!"),
                          icone_avertissement=True)
         return ""
 
     if mois_int == 0:
         afficher_message(titre=application_title,
-                         message=QCoreApplication.translate("outils",
+                         message=QCoreApplication.translate("tools",
                                                             "Le numéro du mois est non valide (égale à 0), désolé!"),
                          icone_avertissement=True)
         return ""
@@ -420,7 +1153,7 @@ def date_formatting(date_texte: str) -> str:
         else:
             afficher_message(titre=application_title,
                              message=QCoreApplication.translate(
-                                 "outils",
+                                 "tools",
                                  "Le numéro du mois est non valide (supérieur à 12), désolé!"),
                              icone_avertissement=True)
             return ""
@@ -432,7 +1165,7 @@ def date_formatting(date_texte: str) -> str:
         if jour_int > 31:
             afficher_message(titre=application_title,
                              message=QCoreApplication.translate(
-                                 "outils", "Le numéro du jour est non valide (supérieur à 31), désolé!"),
+                                 "tools", "Le numéro du jour est non valide (supérieur à 31), désolé!"),
                              icone_avertissement=True)
             return ""
 
@@ -440,7 +1173,7 @@ def date_formatting(date_texte: str) -> str:
         if jour_int > 30:
             afficher_message(titre=application_title,
                              message=QCoreApplication.translate(
-                                 "outils", "Le numéro du jour est non valide (supérieur à 30), désolé!"),
+                                 "tools", "Le numéro du jour est non valide (supérieur à 30), désolé!"),
                              icone_avertissement=True)
             return ""
 
@@ -448,7 +1181,7 @@ def date_formatting(date_texte: str) -> str:
         if jour_int > 29:
             afficher_message(titre=application_title,
                              message=QCoreApplication.translate(
-                                 "outils", "Le numéro du jour est non valide (supérieur à 29), désolé!"),
+                                 "tools", "Le numéro du jour est non valide (supérieur à 29), désolé!"),
                              icone_avertissement=True)
             return ""
 
@@ -558,7 +1291,7 @@ def find_new_title(base_title: str, titles_list: list):
                     return titre_temp
 
     except Exception as erreur:
-        print(f"outils_recherche_metier -- fin -- {erreur}")
+        print(f"tools -- find_new_title -- end -- {erreur}")
         pass
 
     num = 1
@@ -584,17 +1317,30 @@ def a___________________conversions_______________():
     pass
 
 
-def convertir_bytes(texte_byte: bytes):
-    if isinstance(texte_byte, str):
-        return texte_byte.strip()
+def convertir_bytes(text_byte: bytes):
+    if isinstance(text_byte, str):
+        return text_byte.strip()
 
-    if not isinstance(texte_byte, bytes):
-        return texte_byte
+    if isinstance(text_byte, (int | float)):
+        return text_byte
 
-    texte = texte_byte.decode('cp1252')
+    if text_byte is None:
+        return ""
 
-    texte = texte.strip()
-    return texte
+    if not isinstance(text_byte, bytes):
+        print(f"tools -- convertir_bytes -- not isinstance(texte_byte, bytes)")
+        return ""
+
+    try:
+        text = text_byte.decode('cp1252', errors='ignore')
+
+        text = text.strip()
+
+    except Exception as error:
+        print(f"tools -- convertir_bytes -- error : {error}")
+        return ""
+
+    return text
 
 
 def a___________________verifications_______________():
@@ -607,7 +1353,7 @@ def verification_catalogue_correct(file_path: str, message=True) -> str:
     if len(content) == 0:
         if message:
             afficher_message(titre=application_title,
-                             message=QCoreApplication.translate("outils", "Le fichier semble être vide, désolé"),
+                             message=QCoreApplication.translate("tools", "Le fichier semble être vide, désolé"),
                              icone_critique=True)
         return ""
 
@@ -615,7 +1361,7 @@ def verification_catalogue_correct(file_path: str, message=True) -> str:
         if message:
             afficher_message(titre=application_title,
                              message=QCoreApplication.translate(
-                                 "outils", "Le fichier ne semble pas être un Catalogue, désolé"),
+                                 "tools", "Le fichier ne semble pas être un Catalogue, désolé"),
                              icone_critique=True)
         return ""
 
@@ -627,23 +1373,23 @@ def verification_catalogue_correct(file_path: str, message=True) -> str:
 
 def catalog_name_is_correct(catalog_name: str) -> str:
     if catalog_name == "":
-        return QCoreApplication.translate("outils", "Vous ne pouvez pas laisser le titre vide.")
+        return QCoreApplication.translate("tools", "Vous ne pouvez pas laisser le titre vide.")
 
     if catalog_name == "test":
-        return QCoreApplication.translate("outils", "Ce titre est protégé.")
+        return QCoreApplication.translate("tools", "Ce titre est protégé.")
 
     if catalog_name in invalides_mots:
-        a = QCoreApplication.translate("outils", "fait parti des noms de fichiers interdits dans Windows")
+        a = QCoreApplication.translate("tools", "fait parti des noms de fichiers interdits dans Windows")
         return f"{catalog_name} {a}"
 
     for chars in invalid_chars:
         if chars in catalog_name:
-            a = QCoreApplication.translate("outils", "le caractère")
-            c = QCoreApplication.translate("outils", "fait parti des caractères interdits dans Windows")
+            a = QCoreApplication.translate("tools", "le caractère")
+            c = QCoreApplication.translate("tools", "fait parti des caractères interdits dans Windows")
             return f"{a} '{chars}' {c}"
 
     if len(catalog_name) > 27:
-        return QCoreApplication.translate("outils", "Le nom de catalogue ne doit pas dépassé 27 caractères")
+        return QCoreApplication.translate("tools", "Le nom de catalogue ne doit pas dépassé 27 caractères")
 
     return "Ok"
 
@@ -662,13 +1408,14 @@ def catalog_xml_region(current_language="EN") -> str:
 # return "1.0"
 
 
-def catalog_xml_date(current_language="EN") -> str:
-    date_complet_modif = datetime.now()
+def catalog_xml_date(current_language="EN", date_complet_modif=None) -> str:
+    if date_complet_modif is None:
+        date_complet_modif = datetime.now()
 
     if current_language == "FR":
-        date_modif = date_complet_modif.strftime("%d-%m-%Y à %H:%M:%S")
+        date_modif = date_complet_modif.strftime("%d-%m-%Y - %H:%M:%S")
     else:
-        date_modif = date_complet_modif.strftime("%m-%d-%Y à %I:%M:%S %p")
+        date_modif = date_complet_modif.strftime("%m-%d-%Y - %I:%M:%S %p")
 
     return date_modif
 
@@ -731,7 +1478,7 @@ def validation_fichier_xml(fichier_a_analyser, afficher_msg=True):
 
         if afficher_msg:
             afficher_message(titre=application_title,
-                             message=QCoreApplication.translate("outils", "Une erreur a été détecté dans le fichier"),
+                             message=QCoreApplication.translate("tools", "Une erreur a été détecté dans le fichier"),
                              icone_critique=True,
                              details=error)
 
@@ -741,7 +1488,7 @@ def validation_fichier_xml(fichier_a_analyser, afficher_msg=True):
 
         if afficher_msg:
             afficher_message(titre=application_title,
-                             message=QCoreApplication.translate("outils", "Une erreur a été détecté dans le fichier"),
+                             message=QCoreApplication.translate("tools", "Une erreur a été détecté dans le fichier"),
                              icone_critique=True,
                              details=error)
 
@@ -751,7 +1498,7 @@ def validation_fichier_xml(fichier_a_analyser, afficher_msg=True):
 
         if afficher_msg:
             afficher_message(titre=application_title,
-                             message=QCoreApplication.translate("outils", "Le fichier est inaccessible"),
+                             message=QCoreApplication.translate("tools", "Le fichier est inaccessible"),
                              icone_critique=True,
                              details=error)
 
@@ -761,7 +1508,7 @@ def validation_fichier_xml(fichier_a_analyser, afficher_msg=True):
 
         if afficher_msg:
             afficher_message(titre=application_title,
-                             message=QCoreApplication.translate("outils", "Une erreur a été détecté dans le fichier"),
+                             message=QCoreApplication.translate("tools", "Une erreur a été détecté dans le fichier"),
                              icone_critique=True)
         return None
 
@@ -770,8 +1517,8 @@ def validation_fichier_xml(fichier_a_analyser, afficher_msg=True):
         return tree
 
 
-def get_value_is_valid(xml_element: lxml.etree._Element) -> bool:
-    if not isinstance(xml_element, lxml.etree._Element):
+def get_value_is_valid(xml_element: etree._Element) -> bool:
+    if not isinstance(xml_element, etree._Element):
         return False
 
     texte = xml_element.text
@@ -801,8 +1548,8 @@ def verification_nom_catalogue(chemin_actuel: str):
 
     afficher_message(titre=application_title,
                      message=QCoreApplication.translate(
-                         "outils", "Le nombre de caractères du fichier ne peut pas dépacer 27 caractères,"
-                                   "le nom du fichier a été rogné."),
+                         "tools", "Le nombre de caractères du fichier ne peut pas dépacer 27 caractères,"
+                                  "le nom du fichier a été rogné."),
                      icone_avertissement=True)
 
     nom_fichier_ss_ext = nom_fichier[:-4]
@@ -854,7 +1601,6 @@ def recherche_catalogue_prj(prj_folder: str) -> str:
 def qm_check(qm: QModelIndex) -> bool:
     if not isinstance(qm, QModelIndex):
         return False
-
     return qm.isValid()
 
 
@@ -886,13 +1632,13 @@ def get_real_path_of_apn_file(file_path: str, prj_path: str, is_cat_folder=False
     if not os.path.exists(file_path):
 
         if show_msg:
-            a = QCoreApplication.translate("outils", "Le fichier '.prj' n'existe pas dans le dossier PRJ")
-            b = QCoreApplication.translate("outils", "Vous devez créer une liaison du projet dans Allplan")
-            c = QCoreApplication.translate("outils", "Fichier")
-            d = QCoreApplication.translate("outils", "Gestion de ressources avancés")
-            e = QCoreApplication.translate("outils", "Mes projets")
-            f = QCoreApplication.translate("outils", "clic droit")
-            g = QCoreApplication.translate("outils", "lier un projet existant")
+            a = QCoreApplication.translate("tools", "Le fichier '.prj' n'existe pas dans le dossier PRJ")
+            b = QCoreApplication.translate("tools", "Vous devez créer une liaison du projet dans Allplan")
+            c = QCoreApplication.translate("tools", "Fichier")
+            d = QCoreApplication.translate("tools", "Gestion de ressources avancés")
+            e = QCoreApplication.translate("tools", "Mes projets")
+            f = QCoreApplication.translate("tools", "clic droit")
+            g = QCoreApplication.translate("tools", "lier un projet existant")
 
             afficher_message(titre=application_title,
                              message=f"{a}.\n{b} :\n{c} -> {d} -> \n{e} -> {f} -> {g}",
@@ -925,7 +1671,7 @@ def get_real_path_of_apn_file(file_path: str, prj_path: str, is_cat_folder=False
 
         afficher_message(titre=application_title,
                          message=QCoreApplication.translate(
-                             "outils", "Le projet n'existe pas dans le dossier temporaire d'Allplan."),
+                             "tools", "Le projet n'existe pas dans le dossier temporaire d'Allplan."),
                          icone_avertissement=True)
 
         return ""
@@ -943,7 +1689,7 @@ def get_real_path_of_apn_file(file_path: str, prj_path: str, is_cat_folder=False
     if nom_catalogue == "":
         afficher_message(titre=application_title,
                          message=QCoreApplication.translate(
-                             "outils", "Aucun catalogue n'est actuellement assigné à ce projet."),
+                             "tools", "Aucun catalogue n'est actuellement assigné à ce projet."),
                          icone_avertissement=True)
 
         return ""
@@ -953,7 +1699,7 @@ def get_real_path_of_apn_file(file_path: str, prj_path: str, is_cat_folder=False
     if not os.path.exists(chemin_fichier_cat):
         afficher_message(titre=application_title,
                          message=QCoreApplication.translate(
-                             "outils", "le catalogue assigné à ce projet n'a pas été trouvé"),
+                             "tools", "le catalogue assigné à ce projet n'a pas été trouvé"),
                          icone_avertissement=True)
         return ""
 
@@ -1122,30 +1868,7 @@ def a___________________chargements_______________():
 
 
 def settings_verifications() -> None:
-
-    files_list = [app_setting_file,
-
-                  attribute_setting_file, attribute_config_file,
-
-                  cat_list_file,
-
-                  formula_setting_file,
-
-                  formula_fav_setting_file, formula_fav_config_file,
-
-                  library_setting_file, library_config_file,
-
-                  library_synchro_config_file,
-
-                  model_setting_file, model_config_file,
-
-                  order_setting_file,
-
-                  unit_list_file,
-
-                  warning_setting_file]
-
-    for file_name in files_list:
+    for file_name in settings_names.keys():
 
         if os.path.exists(f"{asc_settings_path}{file_name}.ini"):
             continue
@@ -1271,7 +1994,7 @@ def settings_get(file_name: str, info_name):
 def settings_save(file_name: str, config_datas: Union[dict, tuple, list]) -> bool:
     json_file_path = f"{asc_settings_path}{file_name}.ini"
 
-    if asc_settings_path == "" or file_name == "" or asc_settings_path == "":
+    if asc_settings_path == "" or file_name == "":
         return False
 
     if os.path.exists(json_file_path):
@@ -1440,49 +2163,40 @@ def read_zt_file(file_path: str, title_datas: dict) -> bool:
 
     content = read_file_to_text(file_path=file_path)
 
-    index_actuel = 0
+    matches = re.findall(r"(?<!-)\b(\d+):(\D+)", content)
 
-    if ":" not in content:
+    if len(matches) == 0:
         return False
 
-    nb_points = content.count(":")
+    for number_str, desc in matches:
 
-    try:
+        if not isinstance(number_str, str) or not isinstance(desc, str):
+            print("tools -- read_zt_file -- not isinstance(number_str, str)")
+            continue
 
-        for index_point in range(nb_points):
+        # --------------
 
-            recherche_points = content.find(":", index_actuel)
+        desc = desc.strip()
 
-            if recherche_points == -1:
-                return False
+        if desc == "":
+            continue
 
-            numero = content[index_actuel: recherche_points]
+        # --------------
 
-            numero = numero.strip()
+        try:
+            number_int = int(number_str)
+        except Exception:
+            print("tools -- read_zt_file -- not number_str.isnumeric()")
+            continue
 
-            index_actuel = recherche_points + 39
+        if number_int < 1 or number_int > 999:
+            continue
 
-            try:
-                number_int = int(numero)
-            except Exception:
-                continue
+        # --------------
 
-            if number_int < 1 or number_int > 999:
-                continue
+        number_str = number_str.zfill(3)
 
-            valeur = content[recherche_points + 1: index_actuel]
-
-            valeur = valeur.replace('\x00', '')
-
-            valeur = valeur.strip()
-
-            if valeur == "":
-                continue
-
-            title_datas[numero] = f"{numero} -- {valeur}"
-
-    except Exception:
-        return False
+        title_datas[f"{number_int}"] = f"{number_str} -- {desc}"
 
     return True
 
@@ -1508,6 +2222,19 @@ def get_catalog_setting_folder(catalog_folder: str) -> str:
     # Define the old folder
     catalog_settings_folder_old = f"{catalog_folder}Sauvegarde_affichage\\"
 
+    if not os.path.exists(catalog_folder):
+
+        try:
+
+            os.mkdir(catalog_folder)
+            os.mkdir(catalog_settings_folder)
+
+        except Exception as error:
+            print(f"tool -- get_catalog_setting_folder -- erreur création dossier SmartCatalog --> {error}")
+            return ""
+
+        return catalog_settings_folder
+
     # if the path existe -> try rename it -> return the path -> Ok
     if os.path.exists(catalog_settings_folder_old):
 
@@ -1519,7 +2246,7 @@ def get_catalog_setting_folder(catalog_folder: str) -> str:
 
         except Exception as error:
 
-            print(f"tool -- catalog_display_find_path -- erreur renommer dossier --> {error}")
+            print(f"tool -- get_catalog_setting_folder -- erreur renommer dossier --> {error}")
 
             return ""
 
@@ -1532,7 +2259,7 @@ def get_catalog_setting_folder(catalog_folder: str) -> str:
 
     except Exception as error:
 
-        print(f"tool -- catalog_display_find_path -- erreur renommer dossier --> {error}")
+        print(f"tool -- get_catalog_setting_folder -- erreur création dossier --> {error}")
 
         return ""
 
@@ -1673,18 +2400,29 @@ def read_catalog_paths_file(catalog_setting_path_file: str,
     :return: dict["user_data_path", "allplan_version"]
     """
 
-    datas = {"user_data_path": folder_std,
-             "allplan_version": allplan_version_default,
-             "attribute_default": attribute_default_base}
+    user_data_path = folder_std
+    allplan_version = allplan_version_default
+    attribute_default = attribute_default_base
+
+    # ----------
 
     # if catalog_setting_path_file is empty -> return default
-    if not catalog_setting_path_file:
-        return datas
+    if catalog_setting_path_file == "":
+        return {"user_data_path": user_data_path,
+                "allplan_version": allplan_version,
+                "attribute_default": attribute_default}
+
+    # ----------
 
     # The file doesn't existe -> creation setting + return default
     if not os.path.exists(catalog_setting_path_file):
-        write_catalog_paths_file(catalog_setting_path_file=catalog_setting_path_file, datas=datas)
-        return datas
+        write_catalog_paths_file(catalog_setting_path_file=catalog_setting_path_file,
+                                 user_data_path=user_data_path,
+                                 allplan_version=allplan_version,
+                                 attribute_default=attribute_default)
+        return {"user_data_path": user_data_path,
+                "allplan_version": allplan_version,
+                "attribute_default": attribute_default}
 
     try:
 
@@ -1699,53 +2437,76 @@ def read_catalog_paths_file(catalog_setting_path_file: str,
             if isinstance(lines_list, dict):
 
                 # define new path
-                user_data_path_new = check_user_datas_path(user_data_path=lines_list.get("user_data_path", ""),
-                                                           folder_std=folder_std,
-                                                           folder_prj=folder_prj)
-                # Remplace default value by new value
-                datas["user_data_path"] = user_data_path_new
-
+                user_data_path = check_user_datas_path(user_data_path=lines_list.get("user_data_path", ""),
+                                                       folder_std=folder_std,
+                                                       folder_prj=folder_prj)
+                # ----------------
                 # define new version
-                version_allplan_new = lines_list.get("allplan_version", "")
+
+                version_allplan_new = lines_list.get("allplan_version", attribute_default_base)
+
+                # ----------------
 
                 # Check if version is installed
-                if version_allplan_new and version_allplan_new in allplan_version_list:
-                    # Remplace default value by new value
-                    datas["allplan_version"] = version_allplan_new
+                if version_allplan_new in allplan_version_list:
+                    allplan_version = version_allplan_new
 
-                return datas
+                # ----------------
+
+                attribute_default = attribut_default_obj.check_number(lines_list.get("attribute_default"))
+
+                # ----------------
+
+                return {"user_data_path": user_data_path,
+                        "allplan_version": allplan_version,
+                        "attribute_default": attribute_default}
 
     except Exception:
         pass
 
     lines_list = read_file_to_list(file_path=catalog_setting_path_file)
 
-    # Check if len datas_new <2 -> creation new setting file + retur default settings
+    # ----------
+
+    # Check if len datas_new <2 -> creation new setting file + return default settings
 
     if len(lines_list) < 2:
-        write_catalog_paths_file(catalog_setting_path_file=catalog_setting_path_file, datas=datas)
+        write_catalog_paths_file(catalog_setting_path_file=catalog_setting_path_file,
+                                 user_data_path=user_data_path,
+                                 allplan_version=allplan_version,
+                                 attribute_default=attribute_default)
 
-        return datas
+        return {"user_data_path": user_data_path,
+                "allplan_version": allplan_version,
+                "attribute_default": attribute_default}
 
-    user_data_path_new = check_user_datas_path(user_data_path=lines_list[0].strip(),
-                                               folder_std=folder_std,
-                                               folder_prj=folder_prj)
+    user_data_path = check_user_datas_path(user_data_path=lines_list[0].strip(),
+                                           folder_std=folder_std,
+                                           folder_prj=folder_prj)
 
-    # Remplace default value by new value
-    datas["user_data_path"] = user_data_path_new
+    # ----------
 
     # define new version
     version_allplan_new = lines_list[1].strip()
 
+    # ----------
+
     # Check if version is installed
     if version_allplan_new and version_allplan_new in allplan_version_list:
         # Remplace default value by new value
-        datas["allplan_version"] = version_allplan_new
+        allplan_version = version_allplan_new
+
+    # ----------
 
     # Update file to json
-    write_catalog_paths_file(catalog_setting_path_file=catalog_setting_path_file, datas=datas)
+    write_catalog_paths_file(catalog_setting_path_file=catalog_setting_path_file,
+                             user_data_path=user_data_path,
+                             allplan_version=allplan_version,
+                             attribute_default=attribute_default)
 
-    return datas
+    return {"user_data_path": user_data_path,
+            "allplan_version": allplan_version,
+            "attribute_default": attribute_default}
 
 
 def check_user_datas_path(user_data_path: str, folder_std: str, folder_prj: str) -> str:
@@ -1762,7 +2523,7 @@ def check_user_datas_path(user_data_path: str, folder_std: str, folder_prj: str)
         return user_data_path
 
     # if STD in the path -> return the path of the STD folder
-    if "STD" in user_data_path:
+    if "\\STD\\" in user_data_path.upper():
         return folder_std
 
     # Try to find the name of prj. -> if error return the path of the STD folder
@@ -1798,14 +2559,8 @@ def check_user_datas_path(user_data_path: str, folder_std: str, folder_prj: str)
     return folder_std
 
 
-def write_catalog_paths_file(catalog_setting_path_file: str, datas: dict) -> bool:
-    """
-    Write the catalog setting file : CatalogName_path.ini
-    :param catalog_setting_path_file: The path of the catalog settings file
-    :param datas: dict["user_data_path", "allplan_version"]
-    :return: dict["user_data_path", "allplan_version"]
-    """
-
+def write_catalog_paths_file(catalog_setting_path_file: str, user_data_path: str, allplan_version: str,
+                             attribute_default: str) -> bool:
     if os.path.exists(catalog_setting_path_file):
 
         catalog_settings_folder = find_folder_path(catalog_setting_path_file)
@@ -1820,6 +2575,24 @@ def write_catalog_paths_file(catalog_setting_path_file: str, datas: dict) -> boo
                     dossier_sauvegarde=f"{catalog_settings_folder}backup\\",
                     nouveau=True)
 
+    # --------------
+
+    if not isinstance(user_data_path, str):
+        print(f"tools -- write_catalog_paths_file -- not isinstance(user_data_path, str)")
+        return False
+
+    if not isinstance(allplan_version, str):
+        print(f"tools -- write_catalog_paths_file -- not isinstance(allplan_version, str)")
+        return False
+
+    attribute_default = attribut_default_obj.check_number(number=attribute_default)
+
+    datas = {"user_data_path": user_data_path,
+             "allplan_version": allplan_version,
+             "attribute_default": attribute_default}
+
+    # --------------
+
     try:
 
         with open(catalog_setting_path_file, 'w', encoding="Utf-8") as file:
@@ -1828,7 +2601,7 @@ def write_catalog_paths_file(catalog_setting_path_file: str, datas: dict) -> boo
             return True
 
     except Exception as error:
-        print(f"outils -- write_datas -- {error}")
+        print(f"outils -- write_catalog_paths_file -- {error}")
         return False
 
 
@@ -1930,8 +2703,12 @@ def get_look_qs(qs: QStandardItem, bold=False, italic=False):
 
 
 def selectionner_parentheses(widget: QPlainTextEdit):
-    cursor = widget.textCursor()
-    texte_selectionner = cursor.selectedText()
+    if isinstance(widget, QPlainTextEdit):
+        cursor = widget.textCursor()
+        texte_selectionner = cursor.selectedText()
+
+    else:
+        return
 
     if cursor.selectionStart() < cursor.position():
         deduction = -1
@@ -2170,8 +2947,8 @@ def get_image_dimensions(image_path, message=True):
             return True
 
         if message:
-            a = QCoreApplication.translate("outils", "La taille de l'icône choisie est supérieure à 10 ko")
-            b = QCoreApplication.translate("outils", "Veuillez choisir une icône plus petite")
+            a = QCoreApplication.translate("tools", "La taille de l'icône choisie est supérieure à 10 ko")
+            b = QCoreApplication.translate("tools", "Veuillez choisir une icône plus petite")
 
             afficher_message(titre=application_title,
                              message=f"{a}.\n{b}.")
@@ -2182,7 +2959,7 @@ def get_image_dimensions(image_path, message=True):
         if message:
             afficher_message(titre=application_title,
                              message=QCoreApplication.translate(
-                                 "outils", "La recherche du poids de l'image a échouée, désolé."))
+                                 "tools", "La recherche du poids de l'image a échouée, désolé."))
         return False
 
 
@@ -2193,7 +2970,7 @@ def set_appearance_number(widget_numero: QLabel):
         numero = int(numero_str)
 
         if 1999 < numero < 12000:
-            widget_numero.setToolTip(QCoreApplication.translate("outils", "Attribut utilisateur"))
+            widget_numero.setToolTip(QCoreApplication.translate("tools", "Attribut utilisateur"))
 
             widget_numero.setStyleSheet("QLabel{border: 2px solid #416596;"
                                         "border-radius: 5px; "
@@ -2203,7 +2980,7 @@ def set_appearance_number(widget_numero: QLabel):
             return
 
         if 55000 <= numero < 99000:
-            widget_numero.setToolTip(QCoreApplication.translate("outils", "Attribut Import"))
+            widget_numero.setToolTip(QCoreApplication.translate("tools", "Attribut Import"))
 
             widget_numero.setStyleSheet("QLabel{border: 2px solid #416596;"
                                         "border-radius: 5px; "
@@ -2213,7 +2990,7 @@ def set_appearance_number(widget_numero: QLabel):
             return
 
         if numero >= 99000:
-            widget_numero.setToolTip(QCoreApplication.translate("outils", "Attribut inconnu"))
+            widget_numero.setToolTip(QCoreApplication.translate("tools", "Attribut inconnu"))
 
             widget_numero.setStyleSheet("QLabel{border: 2px solid #416596;"
                                         "border-radius: 5px; "
@@ -2225,7 +3002,7 @@ def set_appearance_number(widget_numero: QLabel):
     except ValueError:
         pass
 
-    widget_numero.setToolTip(QCoreApplication.translate("outils", "Attribut Allplan"))
+    widget_numero.setToolTip(QCoreApplication.translate("tools", "Attribut Allplan"))
 
     widget_numero.setStyleSheet("QLabel{border: 2px solid #416596; border-radius: 5px; color: #416596}")
 
@@ -2233,16 +3010,16 @@ def set_appearance_number(widget_numero: QLabel):
 def set_appearence_type(bt_type: QPushButton, attrib_option: str):
     if "Nombre entier" in attrib_option:
         bt_type.setText("123")
-        bt_type.setToolTip(QCoreApplication.translate("outils", "Nombre entier"))
+        bt_type.setToolTip(QCoreApplication.translate("tools", "Nombre entier"))
         return
 
     if "Nombre décimal" in attrib_option:
         bt_type.setText("0,0")
-        bt_type.setToolTip(QCoreApplication.translate("outils", "Nombre décimal"))
+        bt_type.setToolTip(QCoreApplication.translate("tools", "Nombre décimal"))
         return
 
     bt_type.setText("ABC")
-    bt_type.setToolTip(QCoreApplication.translate("outils", "Texte"))
+    bt_type.setToolTip(QCoreApplication.translate("tools", "Texte"))
 
 
 def move_window_tool(widget_parent: QWidget, widget_current: QWidget, always_center=False):
@@ -2296,7 +3073,7 @@ def a___________________gestions_registre_______________():
     pass
 
 
-def registry_find_value(path: str, name: str) -> str:
+def registry_find_value(path: str, name: str, key=winreg.HKEY_LOCAL_MACHINE) -> str:
     """
     find in regsitry
     :param path: path in registry
@@ -2305,7 +3082,7 @@ def registry_find_value(path: str, name: str) -> str:
     """
 
     try:
-        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, path)
+        key = winreg.OpenKey(key, path)
         value, _ = winreg.QueryValueEx(key, name)
         winreg.CloseKey(key)
         return value
@@ -2319,7 +3096,7 @@ def registry_find_value(path: str, name: str) -> str:
     # -----------------------------------------
 
     try:
-        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, path, 0, winreg.KEY_READ)
+        key = winreg.OpenKey(key, path, 0, winreg.KEY_READ)
         value, _ = winreg.QueryValueEx(key, name)
         winreg.CloseKey(key)
         return value
@@ -2339,7 +3116,7 @@ def registry_find_value(path: str, name: str) -> str:
         other_view_flag = winreg.KEY_WOW64_32KEY
 
     try:
-        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, path, access=winreg.KEY_READ | other_view_flag)
+        key = winreg.OpenKey(key, path, access=winreg.KEY_READ | other_view_flag)
         value, _ = winreg.QueryValueEx(key, name)
         winreg.CloseKey(key)
         return value
@@ -2352,7 +3129,6 @@ def registry_find_value(path: str, name: str) -> str:
 
 
 def convertir_langue(lg: str) -> str:
-
     if lg in language_title:
         return lg
 
@@ -2371,62 +3147,53 @@ def a___________________gestions_ouvrir_______________():
     pass
 
 
-def open_file(file_path):
-    """Permet d'ouvrir le fichier exporté
-    :param file_path: chemin du fichier à ouvrir
-    :return: None
-    """
-
+def open_file(file_path) -> bool:
     if file_path is None:
-        print("Outils -- ouvrir_fichier -- chemin_fichier is None")
-        return
+        print("tools -- open_file -- chemin_fichier is None")
+        return False
 
     if not os.path.exists(file_path):
-        a = QCoreApplication.translate("outils", "Le fichier")
-        b = QCoreApplication.translate("outils", "n'existe pas, impossible de l'ouvrir, désolé")
+        a = QCoreApplication.translate("tools", "Le fichier")
+        b = QCoreApplication.translate("tools", "n'existe pas, impossible de l'ouvrir, désolé")
 
-        afficher_message(titre=application_title,
+        afficher_message(titre=application_name,
                          message=f"{a} {file_path} {b}")
-        return
+        return False
 
     try:
         subprocess.Popen(['cmd', '/c', 'start', '', file_path], shell=True)
-        return
+        return True
 
-    except Exception:
-        return
+    except Exception as error:
+        print(f"tools -- open_file -- error : {error}")
+        return False
 
 
-def open_folder(folder_path: str):
-    """Permet d'ouvrir le dossier d'export
-    :param folder_path: données à analyser
-    :return: None↨
-    """
-
+def open_folder(folder_path: str) -> bool:
     if folder_path is None:
-        print("Outils -- ouvrir_dossier -- chemin_dossier is None")
-        return
+        print("tools -- open_folder -- folder_path is None")
+        return False
 
     if folder_path == "":
-        afficher_message(titre=application_title,
+        afficher_message(titre=application_name,
                          message=QCoreApplication.translate(
                              "outils", "Aucun chemin défini."))
-        return
+        return False
 
     if not os.path.exists(folder_path):
-        a = QCoreApplication.translate("outils", "Le dossier")
-        b = QCoreApplication.translate("outils", "n'existe pas, impossible de l'ouvrir, désolé")
+        a = QCoreApplication.translate("tools", "Le dossier")
+        b = QCoreApplication.translate("tools", "n'existe pas, impossible de l'ouvrir, désolé")
 
-        afficher_message(titre=application_title,
+        afficher_message(titre=application_name,
                          message=f"{a} : {folder_path} {b}",
                          details=f"folder_path : {folder_path}")
-        return
+        return False
 
     if folder_path.endswith("\\"):
         folder_path = folder_path[:-1]
 
-    # print(chemin_dossier)
     subprocess.Popen(["explorer", folder_path])
+    return True
 
 
 def find_folder_path(file_path: str) -> str:
@@ -2466,12 +3233,15 @@ def find_folder_path(file_path: str) -> str:
         return ""
 
 
-def find_filename(file_path: str) -> str:
+def find_filename(file_path: str, with_ext=False) -> str:
     try:
         filename_with_extension = os.path.basename(file_path)
 
         if os.path.isdir(file_path):
             return ""
+
+        if with_ext:
+            return filename_with_extension
 
         filename_without_extension, _ = os.path.splitext(filename_with_extension)
 
@@ -2645,6 +3415,9 @@ def parcourir_dossier(parent: QObject, title: str, registry: list, current="", d
     :return: chemin du fichier ou ""
     """
 
+    if not isinstance(parent, QObject):
+        parent = None
+
     dossier_actuel = find_folder_path(current)
 
     dossier_defaut = find_folder_path(default)
@@ -2759,6 +3532,69 @@ def recherche_image(image_name: str, image_default: str):
     return image_name
 
 
+def customize_folder_name_apply(folder_path: str, display_name: str, hide=False) -> bool:
+    if not os.path.exists(folder_path) or not os.path.isdir(folder_path):
+        print("tools -- customize_folder_name_apply -- not os.path.exists(folder_path)")
+        return False
+
+    if folder_path.endswith("\\"):
+        folder_path = folder_path.rstrip("\\")
+
+    desktop_ini_path = os.path.join(folder_path, "desktop.ini")
+
+    ini_content = f"""[.ShellClassInfo]
+    LocalizedResourceName={display_name}
+    IconResource={asc_exe_path},0"""
+
+    try:
+
+        with open(desktop_ini_path, "w", encoding="utf-8") as ini_file:
+            ini_file.write(ini_content)
+
+        # -------
+
+        subprocess.run(["attrib", "+s", folder_path], check=True)
+
+        # -------
+
+        if not hide:
+            return True
+
+        subprocess.run(["attrib", "+h", "+s", desktop_ini_path], check=True)
+        return True
+
+    except Exception as error:
+        print(f"tools -- customize_folder_name_apply -- error : {error}")
+
+    return False
+
+
+def customize_folder_name_remove(folder_path: str):
+    if not os.path.exists(folder_path) or not os.path.isdir(folder_path):
+        print("tools -- customize_folder_name_remove -- not os.path.exists(folder_path)")
+        return False
+
+    if folder_path.endswith("\\"):
+        folder_path = folder_path.rstrip("\\")
+
+    desktop_ini_path = os.path.join(folder_path, "desktop.ini")
+
+    try:
+
+        subprocess.run(["attrib", "-s", folder_path], check=True)
+
+        if os.path.exists(desktop_ini_path):
+            subprocess.run(["attrib", "-s", "-h", desktop_ini_path], check=True)
+
+            os.remove(desktop_ini_path)
+            return True
+
+    except Exception as error:
+        print(f"tools -- customize_folder_name_remove -- error : {error}")
+
+    return False
+
+
 def a___________________affichage_messages_______________():
     pass
 
@@ -2862,7 +3698,7 @@ def make_backup(chemin_dossier: str, fichier: str, extension: str, dossier_sauve
     if chemin_dossier == "" or fichier == "" or extension == "":
         afficher_message(titre=application_title,
                          message=QCoreApplication.translate(
-                             "outils", "Une erreur est survenue."),
+                             "tools", "Une erreur est survenue."),
                          icone_critique=True,
                          details=f"Missing data : \n"
                                  f"folder_path = {chemin_dossier}\n"
@@ -2877,7 +3713,7 @@ def make_backup(chemin_dossier: str, fichier: str, extension: str, dossier_sauve
     except ValueError as error:
         afficher_message(titre=application_title,
                          message=QCoreApplication.translate(
-                             "outils", "Une erreur est survenue."),
+                             "tools", "Une erreur est survenue."),
                          icone_critique=True,
                          details=f"{error}")
         return False
@@ -2894,7 +3730,7 @@ def make_backup(chemin_dossier: str, fichier: str, extension: str, dossier_sauve
     if not os.path.exists(chemin_dossier):
         afficher_message(titre=application_title,
                          message=QCoreApplication.translate(
-                             "outils", "Une erreur est survenue."),
+                             "tools", "Une erreur est survenue."),
                          icone_critique=True,
                          details=f"Folder path not found : {chemin_dossier}")
         return False
@@ -2929,7 +3765,7 @@ def make_backup(chemin_dossier: str, fichier: str, extension: str, dossier_sauve
             except OSError as error:
                 afficher_message(titre=application_title,
                                  message=QCoreApplication.translate(
-                                     "outils", "La création du dossier de sauvegarde a échoué."),
+                                     "tools", "La création du dossier de sauvegarde a échoué."),
                                  icone_critique=True,
                                  details=f"{error}")
                 return False
@@ -3062,9 +3898,9 @@ def make_backup(chemin_dossier: str, fichier: str, extension: str, dossier_sauve
 
         copie = False
 
-        a = QCoreApplication.translate("outils", "Sauvegarde : le fichier original")
-        b = QCoreApplication.translate("outils", "ne peut être déplacé vers le dossier de sauvegarde")
-        c = QCoreApplication.translate("outils", "ne peut être copié vers le dossier de sauvegarde")
+        a = QCoreApplication.translate("tools", "Sauvegarde : le fichier original")
+        b = QCoreApplication.translate("tools", "ne peut être déplacé vers le dossier de sauvegarde")
+        c = QCoreApplication.translate("tools", "ne peut être copié vers le dossier de sauvegarde")
 
         if nouveau:
 
@@ -3110,7 +3946,7 @@ def copy_to_clipboard(value: str, show_msg=False):
     if not show_msg:
         return
 
-    txt = QCoreApplication.translate("outils", "est désormais dans votre presse-papier!")
+    txt = QCoreApplication.translate("tools", "est désormais dans votre presse-papier!")
 
     afficher_message(titre=f"{value} {txt}",
                      message=f"{value} {txt}")
@@ -3374,6 +4210,111 @@ def help_pressed(widget_parent: QWidget) -> str:
     short_link = widget.whatsThis()
 
     return short_link
+
+
+def a___________________excel_______________():
+    pass
+
+
+def xml_load_root(file_path: str) -> etree._Element | None:
+    if not isinstance(file_path, str):
+        print("tools -- xml_load_root -- not isinstance(file_path, str)")
+        return
+
+    # -------------
+    # Offline
+    # -------------
+
+    if not file_path.startswith("https"):
+
+        if not os.path.exists(file_path):
+            print(f"tools -- xml_load_root -- not os.path.exists(file_path)")
+            return
+
+        try:
+
+            tree = etree.parse(file_path)
+            root = tree.getroot()
+
+            return root
+
+        except Exception as error:
+            print(f"convert_manage -- ConvertExtern -- run -- error : {error}")
+
+        return
+
+    # -------------
+    # Online
+    # -------------
+
+    try:
+        with urllib.request.urlopen(file_path) as response:
+
+            xml = response.read().decode()
+
+            if not isinstance(xml, str):
+                print("tools -- xml_load_root -- not isinstance(xml, str)")
+                return
+
+            root = etree.fromstring(xml)
+            return root
+
+    except Exception as error:
+        print(f"tools -- xml_load_root -- error : {error}")
+
+
+def excel_load_workbook(file_path: str) -> openpyxl.Workbook | None:
+    # -------------
+    # Offline
+    # -------------
+
+    if not file_path.lower().startswith("https"):
+
+        try:
+
+            with open(file_path, "rb") as f:
+                in_mem_file = io.BytesIO(f.read())
+
+            workbook = openpyxl.load_workbook(in_mem_file, data_only=True, read_only=True)
+
+            return workbook
+
+        except Exception as error:
+            print(f"tools -- excel_load_workbook -- error : {error}")
+
+        return
+
+    # -------------
+    # Online
+    # -------------
+
+    try:
+
+        response = requests.get(file_path, stream=True, verify=False)
+
+    except Exception as error:
+        print(f"tools -- excel_load_workbook -- error : {error}")
+        return
+
+    if not isinstance(response, requests.Response):
+        print(f"tools -- excel_load_workbook -- not isinstance(response, Response)")
+        return
+
+    if response.status_code != 200:
+        print(f"tools -- excel_load_workbook -- error : {response.status_code}")
+        return
+
+    try:
+        file_data = BytesIO(response.content)
+
+        workbook = openpyxl.load_workbook(file_data, data_only=True, read_only=True)
+
+        return workbook
+
+    except Exception as error:
+        print(f"convert_manage -- ConvertExcel -- excel_load_workbook -- error 2 : {error}")
+
+    return None
 
 
 def a___________________end_______________():

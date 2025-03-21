@@ -4,24 +4,24 @@
 from PyQt5.Qt import *
 
 from main_datas import attribute_add_icon, delete_icon, get_icon, cut_icon, move_up_icon, move_down_icon, refresh_icon
-from main_datas import merge_icon
-from hierarchy_qs import folder_code
+from main_datas import attribute_icon, user_guid, merge_icon
+from hierarchy import MyQstandardItem
 
 index_action = Qt.UserRole + 2
 
-ajouter_ele = "ajouter_ele"
-couper_ele = "couper_ele"
-supprimer_ele = "supprimer_ele"
-deplacer_ele = "deplacer_ele"
-deplacer_material = "deplacer_material"
+history_add_ele = "add_ele"
+history_cut_ele = "cut_ele"
+history_del_ele = "del_ele"
+history_move_ele = "move_ele"
+history_move_material = "move_material"
 
-modif_icone = "modif_icone"
+history_change_icon = "modify_icon"
 
-ajouter_attr = "ajouter_attr"
-modifier_attr = "modifier_attr"
-supprimer_attr = "supprimer_attr"
+history_add_attribute = "add_attribute"
+history_modify_attribute = "modifiy_attribute"
+history_del_attribute = "del_attribute"
 
-library_synchro_code = "library_synchro"
+history_library_synchro = "library_synchro"
 
 user_data_type = Qt.UserRole + 1
 
@@ -29,380 +29,382 @@ nb_max = 50
 
 
 class ActionInfo:
-    def __init__(self, action_type, nom_action: str, id_action: int, data=None):
+    def __init__(self, action_type: str, action_name: str, action_icon="", action_tooltips=""):
+
+        self.action_id = id(self)
         self.action_type = action_type
-        self.data = data
-        self.nom_action = nom_action
-        self.id = id_action
+        self.action_name = action_name
+        self.action_icon = get_icon(action_icon)
 
-
-class ActionCreationElement(ActionInfo):
-    def __init__(self, id_action: int, nom_action: str, qs_parent: QStandardItem, qs_actuel, index_ele: int,
-                 liste_ele: list):
-        super().__init__(action_type=ajouter_ele, nom_action=nom_action, id_action=id_action)
-
-        type_actuel: str = qs_actuel.data(user_data_type)
-
-        if type_actuel == folder_code:
-            icone = get_icon(qs_actuel.icon_path)
+        if action_tooltips == "":
+            self.action_tooltips = action_name
         else:
-            icone = get_icon(f":/Images/{type_actuel.lower()}.png")
-
-        self.data = {"id_action": id_action,
-                     "nom_action": nom_action,
-                     "action_type": self.action_type,
-                     "icone": icone,
-                     "qs_parent": qs_parent,
-                     "qs_actuel": qs_actuel,
-                     "index_ele": index_ele,
-                     "liste_ele": liste_ele}
+            self.action_tooltips = action_tooltips
 
 
-class ActionCouperEle(ActionInfo):
-    def __init__(self, id_action: int, nom_action: str,
-                 qs_parent_actuel: QStandardItem, qs_parent_futur: QStandardItem,
-                 qs_actuel: QStandardItem,
-                 row_actuel: int, row_futur: int, liste_ele: list):
-        super().__init__(action_type=couper_ele, nom_action=nom_action, id_action=id_action)
+class ActionAddEle(ActionInfo):
+    def __init__(self, action_name: str, qs_current: MyQstandardItem):
+        super().__init__(action_type=history_add_ele, action_name=action_name, action_tooltips=action_name)
 
-        icone = get_icon(cut_icon)
+        self.guid_parent = ""
+        self.guid_current = qs_current.data(user_guid)
 
-        self.data = {"id_action": id_action,
-                     "nom_action": nom_action,
-                     "action_type": self.action_type,
-                     "icone": icone,
-                     "qs_parent_actuel": qs_parent_actuel,
-                     "qs_parent_futur": qs_parent_futur,
-                     "qs_actuel": qs_actuel,
-                     "row_actuel": row_actuel,
-                     "row_futur": row_futur,
-                     "liste_ele": liste_ele}
+        self.row_current = qs_current.row()
+        self.qs_list = list()
+
+        # -------------------
+
+        self.action_icon = qs_current.icon()
 
 
-class ActionSuppressionElement(ActionInfo):
-    def __init__(self, id_action: int, nom_action: str, qs_parent: QStandardItem, qs_actuel, index_ele: int,
-                 liste_ele: list):
-        super().__init__(action_type=supprimer_ele, nom_action=nom_action, id_action=id_action)
+class ActionDelEle(ActionInfo):
 
-        icone = get_icon(delete_icon)
+    def __init__(self, action_name: str, guid_parent: str, qs_current: MyQstandardItem, row_current: int,
+                 qs_list: list):
+        super().__init__(action_type=history_del_ele,
+                         action_name=action_name,
+                         action_icon=delete_icon,
+                         action_tooltips=action_name)
 
-        self.data = {"id_action": id_action,
-                     "nom_action": nom_action,
-                     "action_type": self.action_type,
-                     "icone": icone,
-                     "qs_parent": qs_parent,
-                     "qs_actuel": qs_actuel,
-                     "index_ele": index_ele,
-                     "liste_ele": liste_ele}
+        self.guid_parent = guid_parent
+        self.guid_current = qs_current.data(user_guid)
+        self.row_current = row_current
+        self.qs_list = qs_list
 
 
-class ActionDeplacerEle(ActionInfo):
-    def __init__(self, id_action: int, nom_action: str, qs_parent: QStandardItem, qs_actuel: QStandardItem,
-                 row_actuel: int, row_futur: int):
-        super().__init__(action_type=deplacer_ele, nom_action=nom_action, id_action=id_action)
+class ActionMoveEle(ActionInfo):
 
-        if row_futur > row_actuel:
+    def __init__(self, action_name: str, guid_current: str, row_current: int, row_new: int):
 
-            icone = get_icon(move_up_icon)
+        super().__init__(action_type=history_move_ele, action_name=action_name, action_tooltips=action_name)
+
+        self.guid_current = guid_current
+        self.row_current = row_current
+        self.row_new = row_new
+
+        # -------------------
+
+        if row_new > row_current:
+
+            self.action_icon = get_icon(move_up_icon)
         else:
-            icone = get_icon(move_down_icon)
+            self.action_icon = get_icon(move_down_icon)
 
-        self.data = {"id_action": id_action,
-                     "nom_action": nom_action,
-                     "action_type": self.action_type,
-                     "icone": icone,
-                     "qs_parent": qs_parent,
-                     "qs_actuel": qs_actuel,
-                     "row_actuel": row_actuel,
-                     "row_futur": row_futur}
+
+class ActionCutEle(ActionInfo):
+    def __init__(self, action_name: str, guid_parent_new: str, guid_current: str, row_new: int):
+        super().__init__(action_type=history_cut_ele,
+                         action_name=action_name,
+                         action_icon=cut_icon,
+                         action_tooltips=action_name)
+
+        self.guid_parent_new = guid_parent_new
+        self.guid_current = guid_current
+        self.row_new = row_new
 
 
 class ActionMoveMaterial(ActionInfo):
-    def __init__(self, id_action: int, nom_action: str, qs_parent: QStandardItem, qs_new_list: list):
-        super().__init__(action_type=deplacer_material, nom_action=nom_action, id_action=id_action)
 
-        icone = get_icon(merge_icon)
+    def __init__(self, action_name: str, guid_parent: str, guid_new_folder: str, guid_material: str):
+        super().__init__(action_type=history_move_material,
+                         action_name=action_name,
+                         action_icon=merge_icon,
+                         action_tooltips=action_name)
 
-        self.data = {"id_action": id_action,
-                     "nom_action": nom_action,
-                     "action_type": self.action_type,
-                     "icone": icone,
-                     "qs_parent": qs_parent,
-                     "qs_new_list": qs_new_list}
-
-
-class ActionModifIcone(ActionInfo):
-    def __init__(self, id_action: int, nom_action: str, qs_actuel: QStandardItem, ancien_icone: str, nouvel_icone: str):
-        super().__init__(action_type=modif_icone, nom_action=nom_action, id_action=id_action)
-
-        self.data = {"id_action": id_action,
-                     "nom_action": nom_action,
-                     "action_type": self.action_type,
-                     "icone": get_icon(nouvel_icone),
-                     "qs_actuel": qs_actuel,
-                     "ancien_icone": ancien_icone,
-                     "nouvel_icone": nouvel_icone}
+        self.guid_parent = guid_parent
+        self.guid_new_folder = guid_new_folder
+        self.guid_material = guid_material
 
 
-class ActionAjouterAttribut(ActionInfo):
-    def __init__(self, id_action: int, nom_action: str, qs_parent: QStandardItem, index_attribut: int, liste_ele: list,
-                 dict_comp: dict, type_attribut=""):
-        super().__init__(action_type=ajouter_attr, nom_action=nom_action, id_action=id_action)
+class ActionChangeIcon(ActionInfo):
 
-        self.data = {"id_action": id_action,
-                     "nom_action": nom_action,
-                     "action_type": self.action_type,
-                     "icone": get_icon(attribute_add_icon),
-                     "qs_parent": qs_parent,
-                     "index_attribut": index_attribut,
-                     "liste_ele": liste_ele,
-                     "dict_comp": dict_comp,
-                     "type_attribut": type_attribut}
+    def __init__(self, action_name: str, guid_current: str, icon_new: QIcon):
+        super().__init__(action_type=history_change_icon,
+                         action_name=action_name,
+                         action_icon=icon_new,
+                         action_tooltips=action_name)
+
+        self.guid_current = guid_current
+
+        self.icon_new = icon_new
 
 
-class ActionModifierAttribut(ActionInfo):
-    def __init__(self, id_action: int, nom_action: str, tooltips: str,
-                 qs_parent: QStandardItem, qs_actuel: QStandardItem, index_ele: int,
-                 liste_ele: list, ancienne_valeur: str, nouvelle_valeur: str, ancien_index: str, nouvel_index: str,
-                 dict_comp=None, type_attribut=""):
-        super().__init__(action_type=modifier_attr, nom_action=nom_action, id_action=id_action)
+class AttributeData:
 
-        self.data = {"id_action": id_action,
-                     "nom_action": nom_action,
-                     "action_type": self.action_type,
-                     "icone": get_icon(attribute_add_icon),
-                     "tooltips": tooltips,
-                     "qs_parent": qs_parent,
-                     "qs_actuel": qs_actuel,
-                     "index_ele": index_ele,
-                     "liste_ele": liste_ele,
-                     "ancienne_valeur": ancienne_valeur,
-                     "nouvelle_valeur": nouvelle_valeur,
-                     "ancien_index": ancien_index,
-                     "nouvel_index": nouvel_index,
-                     "dict_comp": dict_comp,
-                     "type_attribut": type_attribut}
+    def __init__(self, guid_current: str, row_current: int, qs_list: list):
+        self.guid_current = guid_current
+        self.row_current = row_current
+        self.qs_list = qs_list
 
 
-class ActionSupprimerAttribut(ActionInfo):
-    def __init__(self, id_action: int, nom_action: str, qs_parent: QStandardItem, index_attribut: int, liste_ele: list,
-                 dict_comp: dict):
-        super().__init__(action_type=supprimer_attr, nom_action=nom_action, id_action=id_action)
+class ActionAddAttribute(ActionInfo):
 
-        self.data = {"id_action": id_action,
-                     "nom_action": nom_action,
-                     "action_type": self.action_type,
-                     "icone": get_icon(delete_icon),
-                     "qs_parent": qs_parent,
-                     "index_attribut": index_attribut,
-                     "liste_ele": liste_ele,
-                     "dict_comp": dict_comp}
+    def __init__(self, action_name: str, guid_parent: str, attribute_data: list):
+        super().__init__(action_type=history_add_attribute,
+                         action_name=action_name,
+                         action_icon=attribute_add_icon,
+                         action_tooltips=action_name)
+
+        self.guid_parent = guid_parent
+        self.attribute_data = attribute_data
+
+
+class ActionDelAttribute(ActionInfo):
+    def __init__(self, action_name: str, guid_parent: str, attribute_data: list):
+        super().__init__(action_type=history_del_attribute,
+                         action_name=action_name,
+                         action_icon=delete_icon,
+                         action_tooltips=action_name)
+
+        self.guid_parent = guid_parent
+        self.attribute_data = attribute_data
+
+
+class AttributeCutData:
+    def __init__(self, number_current: str,
+
+                 guid_original: str, row_original: int, qs_list_original: list,
+                 value_original: str, value_index_original: str,
+
+                 guid_select=None, row_select=None, qs_list_select=None,
+                 value_select=None, value_index_select=None,
+
+                 attribute_delete=False):
+
+        super().__init__()
+
+        self.number_current = number_current
+        self.attribute_delete = attribute_delete
+
+        # -------------
+
+        self.guid_original = guid_original
+        self.row_original = row_original
+        self.qs_list_original = qs_list_original
+        self.value_original = value_original
+        self.value_index_original = value_index_original
+
+        # -------------
+
+        self.guid_select = guid_select
+        self.row_select = row_select
+        self.qs_list_select = qs_list_select
+        self.value_select = value_select
+        self.value_index_select = value_index_select
+
+        # -------------
+
+
+class ActionCutAttribute(ActionInfo):
+    def __init__(self, action_name: str, guid_parent_original: str, guid_parent_select: str, attribute_data: list):
+        super().__init__(action_type=history_del_attribute,
+                         action_name=action_name,
+                         action_icon=delete_icon,
+                         action_tooltips=action_name)
+
+        self.guid_parent_original = guid_parent_original
+        self.guid_parent_select = guid_parent_select
+        self.attribute_data = attribute_data
+
+
+class AttributeModifyData:
+    def __init__(self, number_current: str, value_new: str, value_index_new="-1", guid_desc=None):
+        super().__init__()
+
+        self.number_current = number_current
+        self.value_new = value_new
+        self.value_index_new = value_index_new
+        self.guid_desc = guid_desc
+
+
+class ActionModifyAttribute(ActionInfo):
+    def __init__(self, action_name: str, action_tooltips: str, guid_parent: str, attribute_data: list):
+        super().__init__(action_type=history_modify_attribute,
+                         action_name=action_name,
+                         action_icon=attribute_icon,
+                         action_tooltips=action_tooltips)
+
+        self.guid_parent = guid_parent
+        self.attribute_data = attribute_data
 
 
 class ActionLibrarySynchro(ActionInfo):
-    def __init__(self, id_action: int, nom_action: str, library_synchro_list: list):
-        super().__init__(action_type=library_synchro_code, nom_action=nom_action, id_action=id_action)
 
-        self.data = {"id_action": id_action,
-                     "nom_action": nom_action,
-                     "icone": get_icon(refresh_icon),
-                     "action_type": self.action_type,
-                     "library_synchro_list": library_synchro_list}
+    def __init__(self, action_name: str, library_synchro_list: list):
+        super().__init__(action_type=history_library_synchro,
+                         action_name=action_name,
+                         action_icon=refresh_icon,
+                         action_tooltips=action_name)
+
+        self.library_synchro_list = library_synchro_list
+
+
+class LibraryData:
+
+    def __init__(self, is_creation: bool, guid_parent: str, guid_current: str,
+                 value_new="", value_index_new="-1", guid_desc=None):
+        super().__init__()
+
+        self.is_creation = is_creation
+        self.guid_parent = guid_parent
+        self.guid_current = guid_current
+
+        self.value_new = value_new
+        self.value_index_new = value_index_new
+
+        self.guid_desc = guid_desc
+
+        # --------------
+
+        self.row_current = -1
+        self.qs_list = list()
 
 
 # Classe pour stocker et gérer les actions
 class ActionsData:
     def __init__(self):
-        self.dict_actions = dict()
-        self.nb_item = 1
+        self.action_dict = dict()
 
-    def ajouter_ele(self, nom_action: str, qs_parent: QStandardItem, qs_actuel: QStandardItem,
-                    index_ele: int, liste_ele: list):
+    def action_add_ele(self, action_name: str, qs_current: MyQstandardItem):
 
-        action = ActionCreationElement(id_action=self.nb_item,
-                                       nom_action=nom_action,
-                                       qs_parent=qs_parent,
-                                       qs_actuel=qs_actuel,
-                                       index_ele=index_ele,
-                                       liste_ele=liste_ele)
+        action = ActionAddEle(action_name=action_name,
+                              qs_current=qs_current)
 
-        self.dict_actions[self.nb_item] = action
+        self.action_dict[action.action_id] = action
 
-        self.gestion_nombre_max()
+        self.action_manage_max()
 
-        self.nb_item += 1
+    def action_del_ele(self, action_name: str, guid_parent: str, qs_current: MyQstandardItem, row_current: int,
+                       qs_list: list):
 
-    def deplacer_ele(self, nom_action: str, qs_parent: QStandardItem, qs_actuel: QStandardItem,
-                     row_actuel: int, row_futur: int):
+        action = ActionDelEle(action_name=action_name,
+                              guid_parent=guid_parent,
+                              qs_current=qs_current,
+                              row_current=row_current,
+                              qs_list=qs_list)
 
-        action = ActionDeplacerEle(id_action=self.nb_item,
-                                   nom_action=nom_action,
-                                   qs_parent=qs_parent,
-                                   qs_actuel=qs_actuel,
-                                   row_actuel=row_actuel,
-                                   row_futur=row_futur)
+        self.action_dict[action.action_id] = action
 
-        self.dict_actions[self.nb_item] = action
+        self.action_manage_max()
 
-        self.gestion_nombre_max()
+    def action_move_ele(self, action_name: str, guid_current: str, row_current: int, row_new: int):
 
-        self.nb_item += 1
+        action = ActionMoveEle(action_name=action_name,
+                               guid_current=guid_current,
+                               row_current=row_current,
+                               row_new=row_new)
 
-    def move_materials(self, nom_action: str, qs_parent: QStandardItem, qs_new_list: list):
+        self.action_dict[action.action_id] = action
 
-        action = ActionMoveMaterial(id_action=self.nb_item,
-                                    nom_action=nom_action,
-                                    qs_parent=qs_parent,
-                                    qs_new_list=qs_new_list)
+        self.action_manage_max()
 
-        self.dict_actions[self.nb_item] = action
+    def action_move_materials(self, action_name: str, guid_parent: str, guid_new_folder: str, guid_material: str):
 
-        self.gestion_nombre_max()
+        action = ActionMoveMaterial(action_name=action_name,
+                                    guid_parent=guid_parent,
+                                    guid_new_folder=guid_new_folder,
+                                    guid_material=guid_material)
 
-        self.nb_item += 1
+        self.action_dict[action.action_id] = action
 
-    def couper_ele(self, nom_action: str, qs_parent_actuel: QStandardItem, qs_parent_futur: QStandardItem,
-                   qs_actuel: QStandardItem,
-                   row_actuel: int, row_futur: int, liste_ele: list):
+        self.action_manage_max()
 
-        action = ActionCouperEle(id_action=self.nb_item,
-                                 nom_action=nom_action,
-                                 qs_parent_actuel=qs_parent_actuel,
-                                 qs_parent_futur=qs_parent_futur,
-                                 qs_actuel=qs_actuel,
-                                 row_actuel=row_actuel,
-                                 row_futur=row_futur,
-                                 liste_ele=liste_ele)
+    def action_cut_ele(self, action_name: str, guid_parent_new: str, guid_current: str, row_new: int):
 
-        self.dict_actions[self.nb_item] = action
+        action = ActionCutEle(action_name=action_name,
+                              guid_parent_new=guid_parent_new,
+                              guid_current=guid_current,
+                              row_new=row_new)
 
-        self.gestion_nombre_max()
+        self.action_dict[action.action_id] = action
 
-        self.nb_item += 1
+        self.action_manage_max()
 
-    def suppression_ele(self, nom_action: str, qs_parent: QStandardItem, qs_actuel: QStandardItem,
-                        index_ele: int, liste_ele: list):
+    def action_change_icon(self, action_name: str, guid_current: str, icon_new: QIcon):
 
-        action = ActionSuppressionElement(id_action=self.nb_item,
-                                          nom_action=nom_action,
-                                          qs_parent=qs_parent,
-                                          qs_actuel=qs_actuel,
-                                          index_ele=index_ele,
-                                          liste_ele=liste_ele)
+        action = ActionChangeIcon(action_name=action_name,
+                                  guid_current=guid_current,
+                                  icon_new=icon_new)
 
-        self.dict_actions[self.nb_item] = action
+        self.action_dict[action.action_id] = action
 
-        self.gestion_nombre_max()
+        self.action_manage_max()
 
-        self.nb_item += 1
+    def action_add_attribute(self, action_name: str, guid_parent: str, attribute_data: dict):
 
-    def modif_icone(self, nom_action: str, qs_actuel: QStandardItem, ancien_icone: str, nouvel_icone: str):
+        action = ActionAddAttribute(action_name=action_name, guid_parent=guid_parent, attribute_data=attribute_data)
 
-        action = ActionModifIcone(id_action=self.nb_item,
-                                  nom_action=nom_action,
-                                  qs_actuel=qs_actuel,
-                                  ancien_icone=ancien_icone,
-                                  nouvel_icone=nouvel_icone)
+        self.action_dict[action.action_id] = action
 
-        self.dict_actions[self.nb_item] = action
+        self.action_manage_max()
 
-        self.gestion_nombre_max()
+    def action_modify_attribute(self, action_name: str, tooltips: str,
+                                guid_parent: str, attribute_data: list):
 
-        self.nb_item += 1
+        action = ActionModifyAttribute(action_name=action_name,
+                                       action_tooltips=tooltips,
+                                       guid_parent=guid_parent,
+                                       attribute_data=attribute_data)
 
-    def ajouter_attribut(self, nom_action: str, qs_parent: QStandardItem, index_attribut: int, liste_ele: list,
-                         dict_comp: dict, type_attribut=""):
+        self.action_dict[action.action_id] = action
 
-        action = ActionAjouterAttribut(id_action=self.nb_item,
-                                       nom_action=nom_action,
-                                       qs_parent=qs_parent,
-                                       index_attribut=index_attribut,
-                                       liste_ele=liste_ele,
-                                       dict_comp=dict_comp,
-                                       type_attribut=type_attribut)
+        self.action_manage_max()
 
-        self.dict_actions[self.nb_item] = action
+    def action_del_attribute(self, action_name: str, guid_parent: str, attribute_data: dict):
 
-        self.gestion_nombre_max()
+        action = ActionDelAttribute(action_name=action_name, guid_parent=guid_parent, attribute_data=attribute_data)
 
-        self.nb_item += 1
+        self.action_dict[action.action_id] = action
 
-    def modifier_attribut(self, nom_action: str, tooltips: str,
-                          qs_parent: QStandardItem, qs_actuel: QStandardItem, index_ele: int,
-                          liste_ele: list, ancienne_valeur: str, nouvelle_valeur: str, ancien_index: str,
-                          nouvel_index: str, dict_comp=None, type_attribut=""):
+        self.action_manage_max()
 
-        action = ActionModifierAttribut(id_action=self.nb_item,
-                                        nom_action=nom_action,
-                                        tooltips=tooltips,
-                                        qs_parent=qs_parent,
-                                        qs_actuel=qs_actuel,
-                                        index_ele=index_ele,
-                                        liste_ele=liste_ele,
-                                        ancienne_valeur=ancienne_valeur,
-                                        nouvelle_valeur=nouvelle_valeur,
-                                        ancien_index=ancien_index,
-                                        nouvel_index=nouvel_index,
-                                        dict_comp=dict_comp,
-                                        type_attribut=type_attribut)
+    def action_cut_attribute(self, action_name: str, guid_parent_original: str, guid_parent_select: str,
+                             attribute_data: list):
 
-        self.dict_actions[self.nb_item] = action
+        action = ActionCutAttribute(action_name=action_name,
+                                    guid_parent_original=guid_parent_original,
+                                    guid_parent_select=guid_parent_select,
+                                    attribute_data=attribute_data)
 
-        self.gestion_nombre_max()
+        self.action_dict[action.action_id] = action
 
-        self.nb_item += 1
+        self.action_manage_max()
 
-    def supprimer_attribut(self, nom_action: str, qs_parent: QStandardItem, index_attribut: int, liste_ele: list,
-                           dict_comp: dict):
+    def action_library_synchro(self, action_name: str, library_synchro_list: list):
 
-        action = ActionSupprimerAttribut(id_action=self.nb_item,
-                                         nom_action=nom_action,
-                                         qs_parent=qs_parent,
-                                         index_attribut=index_attribut,
-                                         liste_ele=liste_ele,
-                                         dict_comp=dict_comp)
+        action = ActionLibrarySynchro(action_name=action_name, library_synchro_list=library_synchro_list)
 
-        self.dict_actions[self.nb_item] = action
+        self.action_dict[action.action_id] = action
 
-        self.gestion_nombre_max()
+        self.action_manage_max()
 
-        self.nb_item += 1
+    def action_get_list(self) -> list:
+        return list(self.action_dict.keys())
 
-    def library_synchro(self, nom_action: str, library_synchro_list: list):
+    def supprimer_action(self, action_id: int) -> bool:
 
-        action = ActionLibrarySynchro(id_action=self.nb_item,
-                                      nom_action=nom_action,
-                                      library_synchro_list=library_synchro_list)
+        if action_id not in self.action_dict:
+            return False
 
-        self.dict_actions[self.nb_item] = action
+        self.action_dict.pop(action_id)
 
-        self.gestion_nombre_max()
+        return True
 
-        self.nb_item += 1
+    def action_manage_max(self):
 
-    def creation_liste_action(self) -> list:
-        return list(self.dict_actions.keys())
+        item_count = len(self.action_dict)
 
-    def supprimer_action(self, nom_action: int):
-
-        if nom_action not in self.dict_actions:
-            return
-
-        self.dict_actions.pop(nom_action)
-        self.nb_item -= 1
-
-        return
-
-    def gestion_nombre_max(self):
-
-        if self.nb_item > nb_max:
-            liste_key = list(self.dict_actions)
+        if item_count > nb_max:
+            liste_key = list(self.action_dict)
 
             liste_a_sup = liste_key[:len(liste_key) - nb_max]
 
             for key in liste_a_sup:
-                self.dict_actions.pop(key)
+                self.action_dict.pop(key)
 
-    def clear(self):
-        self.dict_actions = dict()
-        self.nb_item = 1
+    def action_clear(self):
+        self.action_dict.clear()
+
+    @staticmethod
+    def a___________________end______():
+        pass

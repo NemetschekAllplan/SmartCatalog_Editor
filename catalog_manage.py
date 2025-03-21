@@ -1,8 +1,7 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*
-
+import json
 import os.path
-import time
 from datetime import datetime
 from typing import Tuple
 
@@ -12,8 +11,7 @@ from attribute_filling import AttributeFilling
 from allplan_manage import *
 from attribute_code import AttributeCode
 from attribute_name import AttributeName
-from convert_manage import ConvertAllmetre, ConvertBcmOuvrages, ConvertKukat, ConvertNevarisXml
-from hierarchy_qs import *
+from convert_manage import ConvertBcmMaterial, ConvertKukat, ConvertNevarisXml, ConvertTemplate
 from history_manage import *
 from message import *
 from tools import afficher_message as msg
@@ -25,160 +23,6 @@ from tools import catalog_xml_find_all
 from ui_main_windows import Ui_MainWindow
 
 
-class ClipboardDatas:
-
-    def __init__(self, type_element):
-        super().__init__()
-
-        self.type_element = type_element
-        self.datas = []
-
-    def append(self, key: str, value: list) -> None:
-
-        if key != "":
-            self.datas.append({"key": key, "value": value, "id": f"{id(key)}"})
-
-    def keys(self) -> list:
-
-        liste_keys = [item["key"] for item in self.datas]
-        return liste_keys
-
-    def get_titles_list(self, upper=False) -> list:
-
-        titles_list = list()
-
-        for item in self.datas:
-
-            if not isinstance(item, dict):
-                continue
-
-            qs_list = item.get("value")
-
-            if not isinstance(qs_list, list):
-                continue
-
-            qs = qs_list[0]
-
-            if not isinstance(qs, QStandardItem):
-                continue
-
-            title_current = qs.text()
-
-            if upper:
-                title_current = title_current.upper()
-
-            titles_list.append(title_current)
-
-        return titles_list
-
-    def get_values_list(self) -> list:
-
-        values_list = [item["value"] for item in self.datas]
-
-        return values_list
-
-    def clear(self) -> None:
-
-        self.datas.clear()
-
-    def check_title_exist(self, title: str) -> bool:
-
-        title_list = self.keys()
-
-        return title in title_list
-
-    def get_datas_title(self, title: str, id_ele="0") -> list:
-
-        for datas_current in self.datas:
-
-            datas_current: dict
-
-            title_current = datas_current["key"]
-
-            if title == title_current:
-
-                if id_ele == "0":
-                    return [datas_current["value"]]
-
-                id_current = datas_current["id"]
-
-                if id_current == id_ele:
-                    return [datas_current["value"]]
-
-        return list()
-
-    def get_real_title(self, title: str, ele_id="0") -> str:
-
-        for datas_current in self.datas:
-
-            datas_current: dict
-
-            title_current = datas_current["key"]
-
-            if title == title_current:
-
-                if ele_id == "0":
-
-                    datas: list = datas_current.get("value", list())
-
-                    if len(datas) == 0:
-                        return title
-
-                    qs: QStandardItem = datas[0]
-
-                    if not isinstance(qs, QStandardItem):
-                        return title
-
-                    return qs.text()
-
-                id_current = datas_current["id"]
-
-                if id_current == ele_id:
-
-                    datas: list = datas_current.get("value", list())
-
-                    if len(datas) == 0:
-                        return title
-
-                    qs: QStandardItem = datas[0]
-
-                    if not isinstance(qs, QStandardItem):
-                        return title
-
-                    return qs.text()
-
-        return title
-
-    def len_datas(self) -> int:
-        return len(self.datas)
-
-    def get_cut_datas(self, title: str) -> tuple:
-
-        datas_full: list = self.get_datas_title(title)
-
-        if len(datas_full) == 0:
-            return None, None
-
-        datas = datas_full[0]
-
-        if len(datas) < 2:
-            return None, None
-
-        qs_parent: QStandardItem = datas[0]
-
-        if qs_parent is None:
-            return None, None
-
-        qs_current: MyQstandardItem = datas[1]
-
-        if qs_current is None:
-            return None, None
-
-        row_index: int = qs_current.row()
-
-        return qs_parent, row_index
-
-
 class CatalogDatas(QObject):
     formula_color_change_signal = pyqtSignal()
     formula_size_change_signal = pyqtSignal(int)
@@ -188,8 +32,20 @@ class CatalogDatas(QObject):
         super().__init__()
 
         self.asc = asc
-        self.allplan: AllplanDatas = self.asc.allplan
         self.ui: Ui_MainWindow = self.asc.ui
+
+        # ---------
+
+        self.hierarchy: Hierarchy = self.ui.hierarchy
+
+        # todo clipboard - library drop
+        # self.hierarchy.drop_finised.connect(self.coller_update)
+
+        # ---------
+
+        self.allplan: AllplanDatas = self.asc.allplan
+
+        # ---------
 
         self.loading: LoadingSplash = self.asc.loading
 
@@ -203,42 +59,17 @@ class CatalogDatas(QObject):
         self.catalog_setting_path_file = ""
         self.catalog_setting_display_file = ""
 
-        self.cat_model = QStandardItemModel()
+        # self.hierarchy.cat_model = QStandardItemModel()
+        # col_cat_count = 0
 
         self.change_made = False
         self.undo_list = ActionsData()
         self.redo_list = ActionsData()
         self.library_synchro_list = list()
 
-        self.description_show = settings_get(file_name=app_setting_file, info_name="description_show")
-
-        if self.description_show is None:
-            self.description_show = True
-
-        self.expanded_list = list()
-        self.selected_list = list()
-
-        self.error_current_qs = None
-
         # ---------------------------------------
         # FILTER TYPE
         # ---------------------------------------
-
-        self.cat_filter = SpecialFilterProxyModel()
-        self.cat_filter.setRecursiveFilteringEnabled(True)
-        self.cat_filter.setFilterCaseSensitivity(Qt.CaseInsensitive)
-        self.cat_filter.setSortLocaleAware(True)
-        self.cat_filter.setSourceModel(self.cat_model)
-
-        self.cat_filter_2 = QSortFilterProxyModel()
-        self.cat_filter_2.setRecursiveFilteringEnabled(True)
-        self.cat_filter_2.setFilterCaseSensitivity(Qt.CaseInsensitive)
-        self.cat_filter_2.setFilterKeyColumn(col_cat_value)
-        self.cat_filter_2.setFilterRole(user_data_type)
-        self.cat_filter_2.setSortLocaleAware(True)
-        self.cat_filter_2.setSourceModel(self.cat_filter)
-
-        self.ui.hierarchy.setModel(self.cat_filter_2)
 
         self.bcm_path = recherche_chemin_bcm()
         self.allmetre_path = settings_get(library_setting_file, "path_alltop")
@@ -268,7 +99,8 @@ class CatalogDatas(QObject):
     def a___________________catalog_creation___________________():
         pass
 
-    def catalog_create_new(self, catalog_folder: str, catalog_name, user_folder: str, version_allplan: str) -> bool:
+    def catalog_create_new(self, catalog_folder: str, catalog_name, user_folder: str, version_allplan: str,
+                           attribute_number: str) -> bool:
 
         # ------------------------------
         # Catalog path
@@ -283,7 +115,8 @@ class CatalogDatas(QObject):
         if not self.catalog_create_path_file(catalog_folder=catalog_folder,
                                              catalog_name=catalog_name,
                                              user_data_path=user_folder,
-                                             allplan_version=version_allplan):
+                                             allplan_version=version_allplan,
+                                             attribute_default=attribute_number):
             return False
 
         # ------------------------------
@@ -464,7 +297,8 @@ class CatalogDatas(QObject):
 
     @staticmethod
     def catalog_create_path_file(catalog_folder: str, catalog_name: str,
-                                 user_data_path: str, allplan_version: str) -> bool:
+                                 user_data_path: str, allplan_version: str,
+                                 attribute_default: str) -> bool:
 
         """
         Creation of the catalog setting file : CatalogName_path.ini
@@ -472,6 +306,7 @@ class CatalogDatas(QObject):
         :param catalog_name: name of catalog
         :param user_data_path: path of user's datas
         :param allplan_version: name of version Allplan
+        :param attribute_default: attribute_number
         :return: success (bool)
         """
 
@@ -501,8 +336,9 @@ class CatalogDatas(QObject):
         # -----------------------------
 
         if not write_catalog_paths_file(catalog_setting_path_file=catalog_setting_path_file,
-                                        datas={"user_data_path": user_data_path,
-                                               "allplan_version": allplan_version}):
+                                        user_data_path=user_data_path,
+                                        allplan_version=allplan_version,
+                                        attribute_default=attribute_default):
             print("catalog_manage -- catalog_create_path_file -- not write_catalog_paths_file")
             return False
 
@@ -555,15 +391,45 @@ class CatalogDatas(QObject):
                                         allplan_version_list=self.allplan.versions_list)
 
         # -----------------------------
+
+        self.allplan.version_allplan_current = datas.get("allplan_version", version_allplan_default)
+
+        allplan_paths = self.allplan.version_datas.get(self.allplan.version_allplan_current)
+
+        if not isinstance(allplan_paths, AllplanPaths):
+            print("catalog_manage -- catalog_load_path_file -- not isinstance(allplan_paths, AllplanPaths)")
+            return False
+
+        allplan_version = datas.get("allplan_version", version_allplan_default)
+        attribute_default = attribut_default_obj.check_number(datas.get("attribute_default"))
+
+        # -----------------------------
         # Apply settings
         # -----------------------------
 
         user_data_path = datas.get("user_data_path", folder_std)
 
-        self.allplan.catalog_user_path = user_data_path
-        self.allplan.user_attributes_xml_path = self.allplan.search_xml_file(xml_folder_path=f"{user_data_path}Xml\\")
+        if "\\STD\\" in user_data_path.upper():
+            if user_data_path != allplan_paths.std_path:
+                user_data_path = allplan_paths.std_path
 
-        self.allplan.version_allplan_current = datas.get("allplan_version", version_allplan_default)
+                write_catalog_paths_file(catalog_setting_path_file=catalog_setting_path_file,
+                                         user_data_path=user_data_path,
+                                         allplan_version=allplan_version,
+                                         attribute_default=attribute_default)
+
+        self.allplan.catalog_user_path = user_data_path
+        self.allplan.user_attributes_xml_path = f"{user_data_path}Xml\\"
+
+        # -----------------------------
+
+        self.allplan.version_allplan_current = allplan_version
+
+        # -----------------------------
+
+        attribut_default_obj.set_current(number=attribute_default)
+
+        # -----------------------------
 
         if help_mode:
             self.ui.statusbar.showMessage('Allplan 202X -- C:\\Data\\Allplan\\202X\\STD\\')
@@ -574,6 +440,151 @@ class CatalogDatas(QObject):
                                           f'{self.allplan.catalog_user_path}')
 
         return True
+
+    @staticmethod
+    def catalog_is_locked(catalog_path: str) -> bool:
+
+        if not os.path.exists(catalog_path):
+            print("catalog_manage -- catalog_is_locked -- not os.path.exists(catalog_path)")
+            return False
+
+        folder_path = find_folder_path(file_path=catalog_path)
+        file_name = find_filename(file_path=catalog_path)
+
+        lock_file_path = f"{folder_path}ASC_settings\\{file_name}.lck"
+
+        if not os.path.exists(lock_file_path):
+            return False
+
+        try:
+
+            with open(lock_file_path, 'r', encoding="Utf-8") as file:
+
+                config: list = json.load(file)
+
+                if not isinstance(config, list):
+                    print("catalog_manage -- catalog_is_locked -- not isinstance(config, list)")
+                    return False
+
+                if len(config) == 0:
+                    return False
+
+                if len(config) > 1:
+                    return True
+
+                username_use = config[0]
+
+                computer_name = os.environ['COMPUTERNAME']
+                username = os.environ['USERNAME']
+
+                user_current = f"{computer_name} -- {username}"
+
+                if username_use != user_current:
+                    return True
+
+        except Exception as error:
+            print(f"catalog_manage -- catalog_is_locked -- error : {error}")
+
+        return False
+
+    def catalog_lock_file(self, catalog_path: str, lock: bool) -> bool:
+
+        if not os.path.exists(catalog_path):
+            print("catalog_manage -- catalog_lock_file -- not os.path.exists(catalog_path)")
+            return False
+
+        used = self.catalog_is_locked(catalog_path=catalog_path)
+
+        folder_path = find_folder_path(file_path=catalog_path)
+        file_name = find_filename(file_path=catalog_path)
+
+        # ------------
+
+        lock_file_path = f"{folder_path}ASC_settings\\{file_name}.lck"
+
+        config = list()
+
+        if os.path.exists(lock_file_path):
+
+            try:
+
+                with open(lock_file_path, 'r', encoding="Utf-8") as file:
+
+                    config: list = json.load(file)
+
+                    if not isinstance(config, list):
+                        print("catalog_manage -- catalog_is_locked -- not isinstance(config, list)")
+                        config = list()
+
+            except Exception as error:
+                print(f"catalog_manage -- catalog_lock_file -- error : {error}")
+                config = list()
+
+        # ------------
+
+        computer_name = os.environ['COMPUTERNAME']
+        username = os.environ['USERNAME']
+
+        user_current = f"{computer_name} -- {username}"
+
+        # ------------
+        #  Lock
+        # ------------
+
+        if lock:
+
+            if used:
+                msg(titre=application_title,
+                    message=self.tr("Attention, ce catalogue est déjà utilisé par un autre SmartCatalog Editor"),
+                    icone_lock=True)
+
+            if user_current not in config:
+
+                config.append(user_current)
+
+            else:
+                return True
+
+        # ------------
+        #  Unlock
+        # ------------
+
+        else:
+
+            if user_current in config:
+                config.remove(user_current)
+
+            # ------------ Remove empty file
+
+            if len(config) == 0:
+
+                if not os.path.exists(lock_file_path):
+                    return True
+
+                try:
+                    os.remove(lock_file_path)
+                    return True
+
+                except Exception as error:
+                    print(f"catalog_manage -- catalog_is_locked -- error : {error}")
+
+                return False
+
+        # ------------
+        #  Update file
+        # ------------
+
+        try:
+
+            with open(lock_file_path, 'w', encoding="Utf-8") as file:
+
+                json.dump(config, file, ensure_ascii=False, indent=2)
+                return True
+
+        except Exception as error:
+            print(f"catalog_manage -- catalog_lock_file -- error : {error}")
+
+        return False
 
     @staticmethod
     def a___________________catalog_user_path___________________():
@@ -632,7 +643,7 @@ class CatalogDatas(QObject):
         folder_changed = self.allplan.catalog_user_path != user_path
 
         self.allplan.catalog_user_path = user_path
-        self.allplan.user_attributes_xml_path = self.allplan.search_xml_file(xml_folder_path=f"{user_path}Xml\\")
+        self.allplan.user_attributes_xml_path = f"{user_path}Xml\\"
 
         print(f"catalog_manage -- catalog_user_path_define -- catalog_user_path ==> "
               f"{self.allplan.catalog_user_path}")
@@ -651,6 +662,14 @@ class CatalogDatas(QObject):
 
     def catalog_load_start(self, catalog_path: str, loader="xml", chemin_bdd=""):
 
+        # ------------------------
+        # Define all paths
+        # ------------------------
+        if self.catalog_path != "":
+            self.catalog_lock_file(catalog_path=self.catalog_path, lock=False)
+
+        self.catalog_lock_file(catalog_path=catalog_path, lock=True)
+
         self.close_library_signal.emit()
 
         # ------------------------
@@ -664,6 +683,9 @@ class CatalogDatas(QObject):
         # ------------------------
 
         self.ui.attributes_detail.clear()
+
+        self.undo_list.action_clear()
+        self.redo_list.action_clear()
 
         # ------------------------
         # clear current search (ui)
@@ -711,7 +733,7 @@ class CatalogDatas(QObject):
 
             a = self.tr("Conversion de la base de données")
 
-            self.asc.loading.launch_show(f"{a} : {loader} ...")
+            self.loading.launch_show(f"{a} : {loader} ...")
 
         else:
 
@@ -735,14 +757,8 @@ class CatalogDatas(QObject):
         # Initialisation of catalog loading
         # ------------------------
 
-        if loader == "Allmétré":
-            catalog_loading = ConvertAllmetre(allplan=self.allplan,
-                                              file_path=chemin_bdd,
-                                              bdd_title=self.catalog_name,
-                                              conversion=True)
-
-        elif loader == "BCM":
-            catalog_loading = ConvertBcmOuvrages(allplan=self.allplan,
+        if loader == "BCM":
+            catalog_loading = ConvertBcmMaterial(allplan=self.allplan,
                                                  file_path=chemin_bdd,
                                                  bdd_title=self.catalog_name,
                                                  conversion=True)
@@ -785,8 +801,11 @@ class CatalogDatas(QObject):
         # Connecting end signals
         # ------------------------
 
+        catalog_loading.loading_completed.connect(self.hierarchy.loading_model)
         catalog_loading.loading_completed.connect(self.catalog_load_end)
-        catalog_loading.errors_signal.connect(self.catalog_load_error_msg)
+
+        catalog_loading.number_error_signal.connect(self.catalog_number_error_show)
+        catalog_loading.errors_signal.connect(self.catalog_error_show)
 
         # ------------------------
         # start
@@ -794,9 +813,11 @@ class CatalogDatas(QObject):
 
         catalog_loading.run()
 
-    def catalog_load_end(self, model_cat: QStandardItemModel, expanded_list: list, selected_list: list):
+    def catalog_load_end(self):
 
         self.loading.hide()
+
+        # --------------
 
         settings_save_value(file_name=app_setting_file, key_name="path_catalog", value=self.catalog_path)
 
@@ -804,62 +825,66 @@ class CatalogDatas(QObject):
 
         self.asc.open_list_manage(catalog_opened_list=catalog_opened_list)
 
-        self.cat_model = model_cat
-
-        self.expanded_list = expanded_list
-        self.selected_list = selected_list
-
-        self.cat_filter.setSourceModel(self.cat_model)
-        self.cat_filter.setFilterRole(user_data_type)
+        # --------------
 
         # Modification du titre
         self.asc.catalog_load_title()
 
+        # --------------
+
         # suppression du ctrl+z / ctrl+y
-        self.undo_list.clear()
-        self.redo_list.clear()
+        self.undo_list.action_clear()
+        self.redo_list.action_clear()
         self.undo_button_manage()
         self.redo_button_manage()
 
-        if not debug:
-            self.cat_filter.setFilterRegExp(pattern_filter)
-
-        if len(expanded_list) != 0:
-            self.catalog_expand()
-
-        # Définition de l'header de la hiérarchie
-        self.catalog_header_manage()
-
-        if len(selected_list) == 0:
-            self.change_made = False
-            return
-
-        if self.ui.hierarchy.selectionModel() is None:
-            self.change_made = False
-            print("catalog_manage -- catalog_load_end -- self.ui.hierarchy.selectionModel() is None")
-            return
-
-        self.catalog_select_action(selected_list=self.selected_list, scrollto=True)
-        self.selected_list = list()
+        # --------------
 
         self.change_made = False
 
-    def catalog_load_error_msg(self, liste_erreurs):
-        b = self.tr("Des erreurs ont été détectées lors de la lecture du catalogue")
+    def catalog_number_error_show(self, number_error_list: list):
 
-        msg(titre=application_title,
-            message=f"{b} : {self.catalog_name}.xml",
-            details=liste_erreurs,
-            afficher_details=True,
-            icone_avertissement=True)
+        if len(number_error_list) == 0:
+            return
+
+        number_error_list.sort(key=int)
+
+        txt1 = self.tr("Des attributs n'existent pas dans le chemin de données choisi,")
+        txt2 = self.tr("Voulez-vous supprimer ces attributs du catalogue?")
+
+        response = msg(titre=application_title,
+                       message=f"{txt1}<br><b>{txt2}<b>",
+                       icone_avertissement=True,
+                       type_bouton=QMessageBox.Ok | QMessageBox.No | QMessageBox.Cancel,
+                       defaut_bouton=QMessageBox.No,
+                       bt_ok=self.tr("Tous supprimer"),
+                       bt_no=self.tr("Modifier le chemin de données"),
+                       details=number_error_list,
+                       afficher_details=True)
+
+        if response == QMessageBox.Ok:
+            self.attribute_delete_unknown()
+            return
+
+        if response == QMessageBox.No:
+            self.asc.new_catalog_widget.personnalisation(modify=True)
+
+    def catalog_error_show(self, errors_list: list):
+
+        if len(errors_list) != 0:
+            msg(titre=application_title,
+                message=self.tr("Des erreurs ont été détectées lors de la lecture du catalogue"),
+                icone_avertissement=True,
+                details=errors_list,
+                afficher_details=True)
 
     @staticmethod
     def a___________________catalogue_save___________________():
         pass
 
-    def catalog_save_ask(self):
+    def catalog_save_ask(self, exlcude_default_attribute=""):
 
-        if self.cat_model.rowCount() == 0:
+        if self.hierarchy.cat_model.rowCount() == 0:
             return True
 
         print(f"catalog_manage -- demande_enregistrer -- modification_en_cours == {self.change_made}")
@@ -879,7 +904,7 @@ class CatalogDatas(QObject):
                 self.ui.search_error_bt.setChecked(False)
                 self.ui.search_error_bt.clicked.emit()
 
-            self.catalog_save_action()
+            self.catalog_save_action(exlcude_default_attribute=exlcude_default_attribute)
             self.change_made = False
             return True
 
@@ -898,12 +923,23 @@ class CatalogDatas(QObject):
 
         modifiers = QApplication.keyboardModifiers()
 
-        if modifiers == Qt.ControlModifier:
+        if modifiers == Qt.ControlModifier or modifiers == Qt.ShiftModifier:
             self.asc.app_save_datas()
         else:
             self.asc.app_save_all()
 
-    def catalog_save_action(self):
+    def catalog_save_action(self, exlcude_default_attribute="") -> bool:
+
+        used = self.catalog_is_locked(catalog_path=self.catalog_path)
+
+        if used:
+            if msg(titre=application_title,
+                   message=self.tr("Attention, ce catalogue est déjà utilisé par un autre SmartCatalog Editor"),
+                   icone_critique=True,
+                   type_bouton=QMessageBox.Ok | QMessageBox.Cancel,
+                   bt_ok=self.tr("Enregistrer"),
+                   defaut_bouton=QMessageBox.Cancel) != QMessageBox.Ok:
+                return False
 
         tps_start = time.perf_counter()
 
@@ -911,7 +947,8 @@ class CatalogDatas(QObject):
 
         self.loading.launch_show(self.tr("Enregistrement du catalogue ..."))
 
-        CatalogSave(asc=self.asc, catalog=self, allplan=self.allplan)
+        CatalogSave(asc=self.asc, catalog=self, allplan=self.allplan,
+                    exlcude_default_attribute=exlcude_default_attribute)
 
         self.asc.catalog_load_title()
 
@@ -920,6 +957,8 @@ class CatalogDatas(QObject):
         self.change_made = False
 
         print(f"enregistrement terminé en {time.perf_counter() - tps_start}sec")
+
+        return True
 
     @staticmethod
     def a___________________catalog_modification___________________():
@@ -993,436 +1032,12 @@ class CatalogDatas(QObject):
         return None, None
 
     @staticmethod
-    def a___________________catalog_header___________________():
-        pass
-
-    def catalog_header_manage(self) -> None:
-
-        if not debug and not self.ui.hierarchy.hideColumn(col_cat_index):
-            self.ui.hierarchy.setColumnHidden(col_cat_index, True)
-            self.ui.hierarchy.setColumnHidden(col_cat_number, True)
-
-        self.ui.hierarchy.setColumnHidden(col_cat_desc, not self.description_show)
-
-        if self.ui.hierarchy.header() is None:
-            return
-
-        if self.ui.hierarchy.header().height() != 24:
-            self.ui.hierarchy.header().setFixedHeight(24)
-
-        row_count = self.cat_model.rowCount()
-
-        if row_count == 0:
-            return
-
-        size_now = self.ui.hierarchy.header().sectionSize(col_cat_value)
-
-        self.ui.hierarchy.header().setSectionResizeMode(col_cat_value, QHeaderView.ResizeToContents)
-
-        size_after = self.ui.hierarchy.header().sectionSize(col_cat_value)
-
-        if size_after < size_now:
-            self.ui.hierarchy.header().setSectionResizeMode(col_cat_value, QHeaderView.Interactive)
-            self.ui.hierarchy.header().resizeSection(col_cat_value, size_now)
-        else:
-            self.ui.hierarchy.header().setSectionResizeMode(col_cat_value, QHeaderView.Interactive)
-
-        # print("catalog_manage -- hierarchie_gestion_header -- fin")
-
-    @staticmethod
-    def a___________________catalog_expand___________________():
-        pass
-
-    def save_all_expand_qs_in_list(self, expanded_list: list) -> None:
-        """
-        Creation list of All QStandardItem and save it in expanded_list
-        :param expanded_list: list where QS will be saved
-        :return: 
-        """
-
-        self.save_expand_qs_in_list_of(qs_parent=self.cat_model.invisibleRootItem(), expanded_list=expanded_list)
-
-    def save_expand_qs_in_list_of(self, qs_parent: MyQstandardItem, expanded_list: list) -> list:
-        """
-        Creation list of All QStandardItem of qs_parent and save it in expanded_list
-        :param qs_parent: current parent
-        :param expanded_list: list where QS will be saved
-        :return: None
-        """
-
-        for row_index in range(qs_parent.rowCount()):
-
-            qs: MyQstandardItem = qs_parent.child(row_index, col_cat_value)
-
-            if isinstance(qs, Attribute):
-                continue
-
-            if not isinstance(qs, Material) and not isinstance(qs, Folder):
-                return expanded_list
-
-            qm_filter: QModelIndex = self.map_to_filter(qs.index())
-
-            if qm_filter is None:
-                print("catalog_manage -- save_expand_qs_in_list_of -- qm_filter is None")
-                continue
-
-            if not self.ui.hierarchy.isExpanded(qm_filter):
-                continue
-
-            expanded_list.append(qs)
-
-            if qs.hasChildren():
-                self.save_expand_qs_in_list_of(qs_parent=qs, expanded_list=expanded_list)
-
-        return expanded_list
-
-    def catalog_expand(self) -> None:
-
-        if len(self.expanded_list) == 0:
-            return
-
-        self.ui.hierarchy.blockSignals(True)
-
-        self.catalog_expand_action(self.expanded_list)
-
-        self.catalog_header_manage()
-
-        self.ui.hierarchy.blockSignals(False)
-
-        self.expanded_list = list()
-
-    def catalog_expand_action(self, expanded_list: list) -> None:
-
-        if len(expanded_list) == 0:
-            return
-
-        self.ui.hierarchy.blockSignals(True)
-
-        for item in expanded_list:
-
-            if isinstance(item, MyQstandardItem):
-                qmodelindex_model: QModelIndex = item.index()
-
-            elif isinstance(item, QModelIndex):
-                qmodelindex_model = item
-
-            else:
-                print("catalog_manage -- catalog_expand_action -- bad item")
-                continue
-
-            qm_filter: QModelIndex = self.map_to_filter(qmodelindex_model)
-
-            if qm_filter is None:
-                print("catalog_manage -- catalog_expand_action -- qm_filter is None")
-                continue
-
-            self.ui.hierarchy.setExpanded(qm_filter, True)
-
-        self.ui.hierarchy.blockSignals(False)
-
-    def catalog_expand_all_parents(self, qm: QModelIndex):
-
-        if not isinstance(qm, QModelIndex):
-            print("catalog_manage -- catalog_expand_all_parents -- not isinstance(qm, QModelIndex)")
-            return
-
-        model = qm.model()
-
-        if model is None:
-            print("catalog_manage -- catalog_expand_all_parents -- model is None")
-            return
-
-        if model != self.ui.hierarchy.model():
-            qm_filter = self.map_to_filter(qm)
-        else:
-            qm_filter = qm
-
-        qm_parent = qm_filter.parent()
-
-        self.ui.hierarchy.blockSignals(True)
-
-        while True:
-
-            if not qm_check(qm_parent):
-                break
-
-            self.ui.hierarchy.setExpanded(qm_parent, True)
-            qm_parent = qm_parent.parent()
-
-        self.ui.hierarchy.blockSignals(False)
-
-    @staticmethod
-    def a___________________catalog_select___________________():
-        pass
-
-    def get_filter_selection_list(self) -> list:
-
-        if self.ui.hierarchy.selectionModel() is None:
-            print("catalog_manage -- get_filter_selection_list -- self.ui.hierarchy.selectionModel() is None")
-            return list()
-
-        selected_list = self.ui.hierarchy.selectionModel().selectedRows(col_cat_value)
-
-        selected_list.sort()
-
-        return selected_list
-
-    def get_qm_model_selection_list(self, selected_list: list) -> list:
-
-        if self.ui.hierarchy.selectionModel() is None:
-            print("catalog_manage -- get_model_selection_list -- self.ui.hierarchy.selectionModel() is None")
-            return list()
-
-        selected_list.clear()
-
-        selected_tps_list = self.get_filter_selection_list()
-
-        for qm_filter in selected_tps_list:
-
-            qm_model: QModelIndex = self.map_to_model(qm_filter)
-
-            if qm_model is None:
-                print("catalog_manage -- get_model_selection_list -- qm_model is None")
-                continue
-
-            selected_list.append(qm_model)
-
-        return selected_list
-
-    def get_qs_selection_list(self) -> list:
-
-        qs_list = list()
-
-        if self.ui.hierarchy.selectionModel() is None:
-            print("catalog_manage -- get_qs_selection_list -- self.ui.hierarchy.selectionModel()")
-            return qs_list
-
-        selected_list = self.get_filter_selection_list()
-
-        if len(selected_list) == 0:
-            return qs_list
-
-        for qm_filter in selected_list:
-            qs: MyQstandardItem = self.get_qs_by_qm(qm_filter)
-
-            if qs is None:
-                print("catalog_manage -- get_qs_selection_list -- qs is None")
-                continue
-
-            qs_list.append(qs)
-
-        return qs_list
-
-    def catalog_select(self) -> None:
-        self.catalog_select_action(selected_list=self.selected_list)
-        self.selected_list.clear()
-
-    def catalog_select_action(self, selected_list: list, scrollto=True) -> bool:
-
-        if self.ui.hierarchy.selectionModel() is None:
-            print("catalog_manage -- catalog_select_action -- selectionModel is None")
-            return False
-
-        if len(selected_list) == 0:
-            print("catalog_manage -- catalog_select_action -- len(selected_list) == 0")
-            return False
-
-        current_list = list()
-
-        qitemselection = QItemSelection()
-
-        for qm_model in selected_list:
-
-            if isinstance(qm_model, MyQstandardItem):
-                qm_model = self.cat_model.indexFromItem(qm_model)
-
-            elif not isinstance(qm_model, QModelIndex):
-                print("catalog_manage -- catalog_select_action -- not isinstance(qm_model, QModelIndex)")
-                continue
-
-            if not qm_check(qm_model):
-                print("catalog_manage -- catalog_select_action -- qm_check(qm_model)")
-                continue
-
-            if qm_model.data(user_data_type) == attribute_code:
-                qm_model = qm_model.parent()
-
-                if not qm_check(qm_model):
-                    print("catalog_manage -- catalog_select_action -- qm_check(qm_model)")
-                    continue
-
-            qm_filter: QModelIndex = self.map_to_filter(qm_model)
-
-            if qm_filter is None:
-                print("catalog_manage -- catalog_select_action -- qm_filtre is None")
-                continue
-
-            if qm_filter in current_list:
-                print("catalog_manage -- catalog_select_action -- qm_filter in current_list")
-                continue
-
-            self.catalog_expand_all_parents(qm_filter)
-
-            # if len(selected_list) == 1:
-            #     self.ui.hierarchy.setCurrentIndex(qm_filter)
-
-            if qm_filter is None:
-                print("catalog_manage -- catalog_select_action -- qm_filter is None")
-                continue
-
-            model = qm_filter.model()
-
-            if model is None:
-                print("catalog_manage -- catalog_select_action -- model is None")
-                continue
-
-            current_row: int = qm_filter.row()
-            current_parent: QModelIndex = qm_filter.parent()
-
-            if current_parent is None:
-                print("catalog_manage -- catalog_select_action -- current_parent is None")
-                continue
-
-            current_list.append(qm_filter)
-
-            qm_start = model.index(current_row, 0, current_parent)
-            qm_end = model.index(current_row, model.columnCount() - 1, current_parent)
-
-            qitemselection.select(qm_start, qm_end)
-
-        if len(current_list) == 0:
-            return True
-
-        if scrollto:
-            qm_filter = current_list[-1]
-
-            self.ui.hierarchy.scrollTo(qm_filter, QAbstractItemView.PositionAtCenter)
-            self.ui.hierarchy.horizontalScrollBar().setValue(0)
-
-        self.ui.hierarchy.clearSelection()
-
-        self.ui.hierarchy.selectionModel().blockSignals(True)
-
-        self.ui.hierarchy.selectionModel().select(qitemselection,
-                                                  QItemSelectionModel.Select | QItemSelectionModel.Rows)
-
-        self.ui.hierarchy.selectionModel().blockSignals(False)
-
-        self.ui.hierarchy.selectionModel().selectionChanged.emit(qitemselection, qitemselection)
-
-        return True
-
-    @staticmethod
     def a___________________catalog_search___________________():
         pass
 
-    def get_parent(self, qs: MyQstandardItem) -> MyQstandardItem:
-
-        qs_parent = qs.parent()
-
-        if qs_parent is None:
-            return self.cat_model.invisibleRootItem()
-
-        return qs_parent
-
-    def get_qs_by_qm(self, qm: QModelIndex):
-
-        if not qm_check(qm):
-            print("catalog_manage -- get_qs_by_qm -- not qm_check(qm)")
-            return None
-
-        if qm.model() == self.cat_model:
-            return self.cat_model.itemFromIndex(qm)
-
-        qm_model: QModelIndex = self.map_to_model(qm)
-
-        if qm_model is None:
-            print("catalog_manage -- get_qs_by_qm -- qm_model is None")
-            return None
-
-        qs = self.cat_model.itemFromIndex(qm_model)
-
-        if qs is None:
-            print("catalog_manage -- get_qs_by_qm -- qs is None")
-
-        return qs
-
-    def get_current_qs(self):
-
-        selected_list: list = self.get_filter_selection_list()
-
-        if len(selected_list) == 0:
-            return None
-
-        qs = self.get_qs_by_qm(selected_list[0])
-
-        if qs is None:
-            print("catalog_manage -- get_current_qs -- qs is None")
-
-        return qs
-
-    def get_current_model_qm_in_list(self, selected_list: list):
-
-        if len(selected_list) == 0:
-            return None
-
-        qm_filter: QModelIndex = selected_list[0]
-
-        if not qm_check(qm_filter):
-            print("catalog_manage -- get_current_model_qm_in_list -- not qm_check(qm_filter)")
-            return None
-
-        qm_model: QModelIndex = self.map_to_model(qm_filter)
-
-        if qm_model is None:
-            print("catalog_manage -- get_current_model_qm_in_list -- qm_model is None")
-            return None
-
-        return qm_model
-
-    def get_root_children_name(self, upper=True):
-
-        names_list = list()
-
-        for row_index in range(self.cat_model.rowCount()):
-
-            qm: QModelIndex = self.cat_model.index(row_index, col_cat_value)
-
-            if not qm_check(qm):
-                print("catalog_manage -- get_root_children_name -- not qm_check(qm)")
-                continue
-
-            title: str = qm.data()
-
-            if title is None:
-                print("catalog_manage -- get_root_children_name -- title is None")
-                continue
-
-            if upper:
-                names_list.append(title.upper())
-            else:
-                names_list.append(title)
-
-        return names_list
-
-    def get_root_children_type_list(self) -> list:
-
-        children_type_list = list()
-
-        for index_row in range(self.cat_model.invisibleRootItem().rowCount()):
-
-            qs_value = self.cat_model.invisibleRootItem().child(index_row, col_cat_value)
-
-            if isinstance(qs_value, Attribute):
-                continue
-
-            children_type_list.append(qs_value.data(user_data_type))
-
-        return children_type_list
-
     def search_current_selection_text(self) -> str:
 
-        qm_selection_list = self.get_qm_model_selection_list(list())
+        qm_selection_list = self.hierarchy.get_qm_model_selection_list()
 
         if len(qm_selection_list) != 1:
             return ""
@@ -1586,10 +1201,10 @@ class CatalogDatas(QObject):
 
     def get_attributes_list(self) -> list:
 
-        search_start = self.cat_model.index(0, col_cat_number)
+        search_start = self.hierarchy.cat_model.index(0, col_cat_number)
 
-        search = self.cat_model.match(search_start, user_data_type, attribute_code, -1,
-                                      Qt.MatchExactly | Qt.MatchRecursive)
+        search = self.hierarchy.cat_model.match(search_start, user_data_type, attribute_code, -1,
+                                                Qt.MatchExactly | Qt.MatchRecursive)
 
         attributes_list = list()
 
@@ -1643,91 +1258,6 @@ class CatalogDatas(QObject):
         return attributes_list
 
     @staticmethod
-    def a___________________catalog_map___________________():
-        pass
-
-    def map_to_model(self, qm: QModelIndex):
-
-        if not qm_check(qm):
-            print("catalog_manage -- map_to_model -- not qm_check(qm)")
-            return None
-
-        model = qm.model()
-
-        if model is None:
-            print("catalog_manage -- map_to_model -- model is None")
-            return None
-
-        if model == self.cat_model:
-            return qm
-
-        if model == self.cat_filter:
-            qm_model = self.cat_filter.mapToSource(qm)
-
-            if not qm_check(qm_model):
-                print("catalog_manage -- map_to_model -- not qm_check(qm_model)")
-                return None
-
-            return qm_model
-
-        if model == self.cat_filter_2:
-
-            qm_filter1 = self.cat_filter_2.mapToSource(qm)
-
-            if not qm_check(qm_filter1):
-                print("catalog_manage -- map_to_model -- not qm_check(qm_filter1)")
-                return None
-
-            qm_model = self.cat_filter.mapToSource(qm_filter1)
-
-            if not qm_check(qm_model):
-                print("catalog_manage -- map_to_model -- not qm_check(qm_model)")
-                return None
-
-            return qm_model
-
-    def map_to_filter(self, qm: QModelIndex):
-
-        if not qm_check(qm):
-            print("catalog_manage -- map_to_filter -- not qm_check(qm)")
-            return None
-
-        model = qm.model()
-
-        if model is None:
-            print("catalog_manage -- map_to_filter -- model is None")
-            return None
-
-        if model == self.cat_filter_2:
-            return qm
-
-        if model == self.cat_filter:
-
-            qm_filter2 = self.cat_filter_2.mapFromSource(qm)
-
-            if not qm_check(qm_filter2):
-                print("catalog_manage -- map_to_filter -- not qm_check(qm_filter2)")
-                return None
-
-            return qm_filter2
-
-        if model == self.cat_model:
-
-            qm_filter1 = self.cat_filter.mapFromSource(qm)
-
-            if not qm_check(qm_filter1):
-                print("catalog_manage -- map_to_filter -- not qm_check(qm_filter1)")
-                return None
-
-            qm_filter2 = self.cat_filter_2.mapFromSource(qm_filter1)
-
-            if not qm_check(qm_filter2):
-                print("catalog_manage -- map_to_filter -- not qm_check(qm_filter2)")
-                return None
-
-            return qm_filter2
-
-    @staticmethod
     def a___________________material_manage___________________():
         pass
 
@@ -1736,13 +1266,13 @@ class CatalogDatas(QObject):
         if not isinstance(material_name, str) or material_name == "":
             return list()
 
-        search_start: QModelIndex = self.cat_model.index(0, 0)
+        search_start: QModelIndex = self.hierarchy.cat_model.index(0, 0)
 
-        qm_list: list = self.cat_model.match(search_start,
-                                             Qt.DisplayRole,
-                                             material_name,
-                                             -1,
-                                             Qt.MatchExactly | Qt.MatchRecursive)
+        qm_list: list = self.hierarchy.cat_model.match(search_start,
+                                                       Qt.DisplayRole,
+                                                       material_name,
+                                                       -1,
+                                                       Qt.MatchExactly | Qt.MatchRecursive)
 
         if len(qm_list) == 0:
             print("catalog_manage -- ouvrage_rechercher_qmodelindex_filtre -- recherche == 0")
@@ -1755,7 +1285,7 @@ class CatalogDatas(QObject):
             if qm_model.data(user_data_type) != material_code:
                 continue
 
-            qm_filter = self.map_to_filter(qm_model)
+            qm_filter = self.hierarchy.map_to_filter(qm=qm_model)
 
             if qm_filter is None:
                 print("catalog_manage -- ouvrage_rechercher_qmodelindex_filtre -- qmodelindex_filtre is None")
@@ -1770,13 +1300,13 @@ class CatalogDatas(QObject):
         if not isinstance(material_name, str) or material_name == "":
             return
 
-        search_start: QModelIndex = self.cat_model.index(0, 0)
+        search_start: QModelIndex = self.hierarchy.cat_model.index(0, 0)
 
-        qm_list: list = self.cat_model.match(search_start,
-                                             Qt.DisplayRole,
-                                             material_name,
-                                             -1,
-                                             Qt.MatchExactly | Qt.MatchRecursive)
+        qm_list: list = self.hierarchy.cat_model.match(search_start,
+                                                       Qt.DisplayRole,
+                                                       material_name,
+                                                       -1,
+                                                       Qt.MatchExactly | Qt.MatchRecursive)
 
         if len(qm_list) == 0:
             print("catalog_manage -- ouvrage_rechercher_qmodelindex_filtre -- recherche == 0")
@@ -1787,7 +1317,7 @@ class CatalogDatas(QObject):
             if qm.data(user_data_type) != material_code:
                 continue
 
-            qs: MyQstandardItem = self.get_qs_by_qm(qm)
+            qs: MyQstandardItem = self.hierarchy.get_qs_by_qm(qm=qm)
 
             if qs is None:
                 print("catalog_manage -- ouvrage_rechercher_qstandarditem -- qmodelindex_filtre is None")
@@ -1815,7 +1345,7 @@ class CatalogDatas(QObject):
 
         qm_filter: QModelIndex = search_qm[0]
 
-        self.catalog_select_action([qm_filter])
+        self.hierarchy.select_list(selected_list=[qm_filter])
 
     def goto_component(self, material_name: str, component_name: str):
 
@@ -1843,7 +1373,7 @@ class CatalogDatas(QObject):
                 icone_avertissement=True)
             return
 
-        qm_filter = self.map_to_filter(qs_component.index())
+        qm_filter = self.hierarchy.map_to_filter(qm=qs_component.index())
 
         if not qm_check(qm_filter):
             msg(titre=application_title,
@@ -1851,20 +1381,20 @@ class CatalogDatas(QObject):
                 icone_avertissement=True)
             return
 
-        self.catalog_select_action([qm_filter])
+        self.hierarchy.select_list(selected_list=[qm_filter])
 
     def material_refresh_look(self, material_name: str):
 
         if not isinstance(material_name, str) or material_name == "":
             return
 
-        search_start: QModelIndex = self.cat_model.index(0, 0)
+        search_start: QModelIndex = self.hierarchy.cat_model.index(0, 0)
 
-        qm_list: list = self.cat_model.match(search_start,
-                                             Qt.DisplayRole,
-                                             material_name,
-                                             -1,
-                                             Qt.MatchExactly | Qt.MatchRecursive)
+        qm_list: list = self.hierarchy.cat_model.match(search_start,
+                                                       Qt.DisplayRole,
+                                                       material_name,
+                                                       -1,
+                                                       Qt.MatchExactly | Qt.MatchRecursive)
 
         if len(qm_list) == 0:
             print("catalog_manage -- ouvrage_rechercher_qmodelindex_filtre -- recherche == 0")
@@ -1872,7 +1402,7 @@ class CatalogDatas(QObject):
 
         for qm in qm_list:
 
-            qs: MyQstandardItem = self.get_qs_by_qm(qm)
+            qs: MyQstandardItem = self.hierarchy.get_qs_by_qm(qm=qm)
 
             if not isinstance(qs, Material):
                 continue
@@ -1897,13 +1427,13 @@ class CatalogDatas(QObject):
 
         link_count = link_list.count(material_name)
 
-        search_start: QModelIndex = self.cat_model.index(0, 0)
+        search_start: QModelIndex = self.hierarchy.cat_model.index(0, 0)
 
-        qm_list: list = self.cat_model.match(search_start,
-                                             Qt.DisplayRole,
-                                             material_name,
-                                             -1,
-                                             Qt.MatchExactly | Qt.MatchRecursive)
+        qm_list: list = self.hierarchy.cat_model.match(search_start,
+                                                       Qt.DisplayRole,
+                                                       material_name,
+                                                       -1,
+                                                       Qt.MatchExactly | Qt.MatchRecursive)
 
         if len(qm_list) == 0:
             return
@@ -1911,342 +1441,113 @@ class CatalogDatas(QObject):
         for qm in qm_list:
             qm: QModelIndex
 
-            qs: MyQstandardItem = self.get_qs_by_qm(qm)
+            qs: MyQstandardItem = self.hierarchy.get_qs_by_qm(qm=qm)
 
             if not isinstance(qs, Material):
                 continue
 
             qs.set_material_look(link_count)
 
-    @staticmethod
-    def material_code_renamed(code_before: str, code_after: str):
+    def material_code_renamed(self, code_before: str, code_after: str):
 
         if not isinstance(code_before, str) or not isinstance(code_after, str):
+            print("catalog_manage -- material_code_renamed -- not isinstance(code_before, str)")
             return
 
         if code_before == code_after:
             return
+
+        # -----------------
+        # Update links
+        # -----------------
+
+        search_start: QModelIndex = self.hierarchy.cat_model.index(0, 0)
+
+        qm_model_list: list = self.hierarchy.cat_model.match(search_start,
+                                                             Qt.DisplayRole,
+                                                             code_before,
+                                                             -1,
+                                                             Qt.MatchExactly | Qt.MatchRecursive)
+
+        for qm in qm_model_list:
+
+            qs: MyQstandardItem = self.hierarchy.get_qs_by_qm(qm=qm)
+
+            if not isinstance(qs, Link):
+                continue
+
+            qs.setText(code_after)
+
+        # -----------------
+        # Update link_list
+        # -----------------
+
+        if code_before in link_list:
+            link_list[:] = [x if x != code_before else code_after for x in link_list]
+
+        # -----------------
+        # Update material_list
+        # -----------------
 
         if code_before in material_list:
 
             code_index = material_list.index(code_before)
 
             if code_index < 0:
-                print("catalog_manage -- ouvrage_modifier_code_in_listes -- index_code < 0")
-                return
-
-            material_list[code_index] = code_after
+                print("catalog_manage -- material_code_renamed -- material_list -- index_code < 0")
+            else:
+                material_list[code_index] = code_after
 
         code_before = code_before.upper()
         code_after = code_after.upper()
 
-        if code_before in material_with_link_list:
-
-            code_index = material_with_link_list.index(code_before)
-
-            if code_index < 0:
-                print("catalog_manage -- ouvrage_modifier_code_in_listes -- index_code < 0")
-                return
-
-            material_with_link_list[code_index] = code_after
-
-        if code_before == code_after:
-            return
+        # -----------------
+        # Update material_upper_list
+        # -----------------
 
         if code_before in material_upper_list:
 
             code_index = material_upper_list.index(code_before)
 
             if code_index < 0:
-                print("catalog_manage -- ouvrage_modifier_code_in_listes -- index_code_upper < 0")
-                return
-
-            material_upper_list[code_index] = code_after
-
-    def material_add(self, qs: MyQstandardItem):
-
-        if not isinstance(qs, MyQstandardItem):
-            return
-
-        if isinstance(qs, Component):
-            return
-
-        if isinstance(qs, Link):
-
-            title = qs.text()
-
-            if title in link_list:
-                link_list.append(title)
-
-            self.material_update_link_number(material_name=title)
-
-            qs_parent = self.get_parent(qs)
-
-            if qs_parent is None:
-                return
-
-            parent_text = qs_parent.text()
-
-            if parent_text is None:
-                return
-
-            parent_text = parent_text.upper()
-
-            if parent_text in material_with_link_list:
-                material_with_link_list.append(parent_text)
-
-            return
-
-        if isinstance(qs, Folder):
-
-            if not qs.hasChildren():
-                return
-
-            children_list = qs.get_children_qs(children=True, attributes=False)
-
-            for qs_columns_list in children_list:
-                qs_columns_list: list
-
-                qs_val: MyQstandardItem = qs_columns_list[0]
-
-                self.material_add(qs_val)
-
-            return
-
-        if not isinstance(qs, Material):
-            return
-
-        title = qs.text()
-        title_upper = title.upper()
-
-        if title_upper in material_upper_list:
-            material_upper_list.append(title_upper)
-
-        if title in material_list:
-            material_list.append(title)
-
-        link_name_list = qs.get_link_name()
-
-        if len(link_name_list) == 0:
-            return
-
-        for link_name in link_name_list:
-
-            if not isinstance(link_name, str):
-                continue
-
-            link_list.append(link_name)
-            material_with_link_list.append(link_name.upper())
-
-            self.material_update_link_number(material_name=link_name)
-
-    def material_is_deletable(self, qs: MyQstandardItem, delete=True) -> bool:
-
-        if not isinstance(qs, MyQstandardItem):
-            return True
-
-        if isinstance(qs, Component):
-            return True
-
-        if isinstance(qs, Link):
-
-            title = qs.text()
-
-            qs_parent = self.get_parent(qs)
-
-            if qs_parent is None:
-                return True
-
-            parent_text = qs_parent.text()
-
-            if parent_text is None:
-                return True
-
-            parent_text = parent_text.upper()
-
-            if not delete:
-                return True
-
-            if title in link_list:
-                link_list.remove(title)
-                self.material_update_link_number(title)
-
-            if parent_text in material_with_link_list:
-                material_with_link_list.remove(parent_text)
-
-            return True
-
-        if isinstance(qs, Folder):
-
-            children_list = qs.get_children_qs(children=True, attributes=False)
-
-            if len(children_list) == 0:
-                return True
-
-            for qs_columns_list in children_list:
-                qs_columns_list: list
-
-                qs_val: MyQstandardItem = qs_columns_list[0]
-
-                if not self.material_is_deletable(qs=qs_val, delete=delete):
-                    return False
-
-            return True
-
-        if isinstance(qs, Material):
-
-            material_name = qs.text()
-
-            if material_name in link_list:
-                return False
-
-            if delete:
-
-                if material_name in material_list:
-                    material_list.remove(material_name)
-
-                if material_name.upper() in material_upper_list:
-                    material_upper_list.remove(material_name.upper())
-
-            children_list = qs.get_children_qs(children=True, attributes=False)
-
-            if len(children_list) == 0:
-                return True
-
-            for qs_columns_list in children_list:
-                qs_columns_list: list
-
-                qs_val: MyQstandardItem = qs_columns_list[0]
-
-                if not self.material_is_deletable(qs=qs_val, delete=delete):
-                    return False
-
-            return True
-
-        return True
-
-    def material_to_new_folder(self):
-
-        selection_qs_list = self.get_qs_selection_list()
-
-        if len(selection_qs_list) == 0:
-            return
-
-        selection_qs_list.sort()
-
-        expanded_list = list()
-        qs_parent_list = list()
-
-        for qs in selection_qs_list:
-
-            if not isinstance(qs, Material):
-                continue
-
-            qs_parent = qs.parent()
-
-            if not isinstance(qs_parent, Folder):
-                continue
-
-            parent_id = id(qs_parent_list)
-
-            if parent_id in qs_parent_list:
-                continue
-
-            title = qs.text()
-
-            if title == "":
-                continue
-
-            qs_description = qs_parent.child(qs.row(), col_cat_desc)
-
-            if isinstance(qs_description, Info):
-                description = qs_description.text()
+                print("catalog_manage -- material_code_renamed -- material_upper_list -- index_code_upper < 0")
             else:
-                description = ""
+                material_upper_list[code_index] = code_after
 
-            folder_qs_list = self.allplan.creation.folder_line(value=title, description=description)
+        # -----------------
+        # Update material_with_link_list
+        # -----------------
 
-            qs_folder_new = folder_qs_list[0]
+        if code_before in material_with_link_list:
 
-            if not isinstance(qs_folder_new, Folder):
-                continue
+            code_index = material_with_link_list.index(code_before)
 
-            attributes_list = qs_folder_new.get_attribute_numbers_list()
-            attributes_count = len(attributes_list)
+            if code_index < 0:
+                print("catalog_manage -- material_code_renamed -- index_code < 0")
+            else:
+                material_with_link_list[code_index] = code_after
 
-            parent_child_count = qs_parent.rowCount()
+    def material_desc_changed(self, material_name: str, link_desc_after: str):
 
-            for row_index in reversed(range(parent_child_count)):
+        if not isinstance(material_name, str) or not isinstance(link_desc_after, str):
+            print("catalog_manage -- material_desc_changed -- not isinstance(material_name, str)")
+            return
 
-                child_qs_current = qs_parent.child(row_index, 0)
+        search_start: QModelIndex = self.hierarchy.cat_model.index(0, 0)
 
-                if not isinstance(child_qs_current, Material):
-                    continue
-
-                material_qs_list = qs_parent.takeRow(row_index)
-
-                if len(material_qs_list) != qs_parent.columnCount():
-                    continue
-
-                qs_folder_new.insertRow(attributes_count, material_qs_list)
-
-            expanded_list.append(qs_folder_new)
-            qs_parent.appendRow(folder_qs_list)
-
-            self.undo_move_materials(qs_parent=qs_parent,
-                                     qs_new_list=folder_qs_list)
-
-        self.catalog_expand_action(expanded_list=expanded_list)
-        self.catalog_select_action(selected_list=expanded_list, scrollto=True)
-
-    @staticmethod
-    def a___________________link_mange___________________():
-        pass
-
-    def link_refresh_code(self, link_name_before: str, link_name_after: str):
-
-        search_start: QModelIndex = self.cat_model.index(0, 0)
-
-        qm_model_list: list = self.cat_model.match(search_start,
-                                                   Qt.DisplayRole,
-                                                   link_name_before,
-                                                   -1,
-                                                   Qt.MatchExactly | Qt.MatchRecursive)
+        qm_model_list: list = self.hierarchy.cat_model.match(search_start,
+                                                             Qt.DisplayRole,
+                                                             material_name,
+                                                             -1,
+                                                             Qt.MatchExactly | Qt.MatchRecursive)
 
         if len(qm_model_list) == 0:
+            print("catalog_manage -- material_desc_changed -- len(qm_model_list) == 0")
             return
 
         for qm in qm_model_list:
 
-            qs: MyQstandardItem = self.get_qs_by_qm(qm)
-
-            if not isinstance(qs, Link):
-                continue
-
-            qs.setText(link_name_after)
-
-        if link_name_before not in link_list:
-            print(f"catalog_manage -- lien_actualiser_code -- {link_name_before} not in links_list)")
-            return
-
-        link_list[:] = [x if x != link_name_before else link_name_after for x in link_list]
-
-    def link_refresh_desc(self, material_name: str, link_name_after: str):
-
-        search_start: QModelIndex = self.cat_model.index(0, 0)
-
-        qm_model_list: list = self.cat_model.match(search_start,
-                                                   Qt.DisplayRole,
-                                                   material_name,
-                                                   -1,
-                                                   Qt.MatchExactly | Qt.MatchRecursive)
-
-        if len(qm_model_list) == 0:
-            return
-
-        for qm in qm_model_list:
-
-            qs_val: MyQstandardItem = self.get_qs_by_qm(qm)
+            qs_val: MyQstandardItem = self.hierarchy.get_qs_by_qm(qm=qm)
 
             if not isinstance(qs_val, Link):
                 continue
@@ -2254,26 +1555,521 @@ class CatalogDatas(QObject):
             qs_parent = qs_val.parent()
 
             if not isinstance(qs_parent, Material):
+                print("catalog_manage -- material_desc_changed -- not isinstance(qs_parent, Material)")
                 continue
 
             qs_desc = qs_parent.child(qs_val.row(), col_cat_desc)
 
             if not isinstance(qs_desc, Info):
+                print("catalog_manage -- material_desc_changed -- not isinstance(qs_desc, Info)")
                 continue
 
-            qs_desc.setText(link_name_after)
+            qs_desc.setText(link_desc_after)
 
-    def link_get_structure(self, material_name: str, qs_parent: Material):
+    def material_add(self, qs: MyQstandardItem):
+
+        if isinstance(qs, Component):
+            return True
+
+        if isinstance(qs, Link):
+
+            link_name = qs.text()
+
+            link_list.append(link_name)
+
+            qs_material = qs.parent()
+
+            if not isinstance(qs_material, Material):
+                print("catalog_manage -- material_add -- not isinstance(qs_material, Material)")
+                return False
+
+            material_name = qs_material.text()
+
+            material_name = material_name.upper()
+
+            if material_name not in material_with_link_list:
+                material_with_link_list.append(material_name)
+
+            self.material_update_link_number(material_name=link_name)
+
+            return True
+
+        if isinstance(qs, Folder):
+
+            search_start = self.hierarchy.cat_model.index(0, col_cat_value, qs.index())
+
+            search = self.hierarchy.cat_model.match(search_start, user_data_type, material_code, -1,
+                                                    Qt.MatchExactly | Qt.MatchRecursive)
+
+            if len(search) == 0:
+                return True
+
+        elif isinstance(qs, Material):
+            search = [qs.index()]
+
+        else:
+            print("catalog_manage -- material_add -- not isinstance(qs, MyQstandardItem)")
+            return False
+
+        for qm_material in search:
+
+            if not qm_check(qm_material):
+                print("catalog_manage -- material_add -- not qm_check(qm_material)")
+                continue
+
+            material_name = qm_material.data()
+
+            if not isinstance(material_name, str):
+                print("catalog_manage -- material_add -- not isinstance(material_name, str)")
+                continue
+
+            if material_name in material_list:
+                material_list.append(material_name)
+
+            if material_name.upper() in material_upper_list:
+                material_upper_list.append(material_name.upper())
+
+            search_link_start = self.hierarchy.cat_model.index(0, col_cat_value, qm_material)
+
+            search_link = self.hierarchy.cat_model.match(search_link_start, user_data_type, link_code, -1,
+                                                         Qt.MatchExactly)
+
+            if len(search_link) == 0:
+                continue
+
+            if material_name.upper() in material_with_link_list:
+                material_with_link_list.append(material_name.upper())
+
+            for qm_link in search_link:
+
+                if not qm_check(qm_link):
+                    print("catalog_manage -- material_add -- not qm_check(qm_link)")
+                    continue
+
+                link_name = qm_link.data()
+
+                if link_name in link_list:
+                    link_list.append(link_name)
+                    self.material_update_link_number(link_name)
+
+        return True
+
+    def material_is_deletable(self, qs: MyQstandardItem) -> bool:
+        """
+        Check if deletable ONLY
+        :param qs: current QStandardItem
+        :return: delete is possible or not
+        """
+
+        if isinstance(qs, Component) or isinstance(qs, Link):
+            return True
+
+        if isinstance(qs, Folder):
+
+            search_start = self.hierarchy.cat_model.index(0, col_cat_value, qs.index())
+
+            search = self.hierarchy.cat_model.match(search_start, user_data_type, material_code, -1,
+                                                    Qt.MatchExactly | Qt.MatchRecursive)
+
+            if len(search) == 0:
+                return True
+
+        elif isinstance(qs, Material):
+            search = [qs.index()]
+
+        else:
+            print("catalog_manage -- material_is_deletable -- not isinstance(qs, MyQstandardItem)")
+            return False
+
+        for qm_material in search:
+
+            if not qm_check(qm_material):
+                print("catalog_manage -- material_is_deletable -- not qm_check(qm_material)")
+                continue
+
+            material_name = qm_material.data()
+
+            if not isinstance(material_name, str):
+                print("catalog_manage -- material_is_deletable -- not isinstance(material_name, str)")
+                continue
+
+            if material_name in link_list:
+                return False
+
+        return True
+
+    def material_delete(self, qs: MyQstandardItem) -> bool:
+        """
+        Check if deletable and delete
+        :param qs: current QStandardItem
+        :return: delete is Ok or not
+        """
+
+        if not self.material_is_deletable(qs=qs):
+            return False
+
+        # ----------
+
+        if isinstance(qs, Component):
+            return True
+
+        # ----------
+
+        if isinstance(qs, Link):
+
+            search_link_start = self.hierarchy.cat_model.index(0, col_cat_value)
+
+            link_name = qs.text()
+
+            if link_name in link_list:
+                link_list.remove(link_name)
+            else:
+                print("catalog_manage -- material_delete -- link_name not in link_list")
+
+            search_link = self.hierarchy.cat_model.match(search_link_start, Qt.DisplayRole, link_name, -1,
+                                                         Qt.MatchExactly | Qt.MatchRecursive)
+
+            if len(search_link) == 0:
+                print("catalog_manage -- material_delete -- len(search_link) == 0")
+                return False
+
+            for qm_current in search_link:
+
+                if not qm_check(qm_current):
+                    print("catalog_manage -- material_delete -- not qm_check(qm_current)")
+                    continue
+
+                if qm_current.data(user_data_type) != material_code:
+                    continue
+
+                material_name = qm_current.data()
+
+                self.material_update_link_number(material_name=material_name)
+
+                search_link_start = self.hierarchy.cat_model.index(0, col_cat_value, qm_current)
+
+                search_link = self.hierarchy.cat_model.match(search_link_start, user_data_type, link_code, -1,
+                                                             Qt.MatchExactly)
+
+                if len(search_link) == 0:
+                    continue
+
+                if material_name.upper() not in material_with_link_list:
+                    print("catalog_manage -- material_delete -- not isinstance(qs_material, Material)")
+                    continue
+
+                material_with_link_list.remove(material_name.upper())
+
+                self.material_update_link_number(material_name=material_name)
+                continue
+
+            return True
+
+        # ----------
+
+        if isinstance(qs, Folder):
+
+            search_start = self.hierarchy.cat_model.index(0, col_cat_value, qs.index())
+
+            search = self.hierarchy.cat_model.match(search_start, user_data_type, material_code, -1,
+                                                    Qt.MatchExactly | Qt.MatchRecursive)
+
+            if len(search) == 0:
+                return True
+
+        # ----------
+
+        elif isinstance(qs, Material):
+            search = [qs.index()]
+
+        # ----------
+
+        else:
+            print("catalog_manage -- material_delete -- not isinstance(qs, MyQstandardItem)")
+            return False
+
+        for qm_material in search:
+
+            if not qm_check(qm_material):
+                print("catalog_manage -- material_delete -- not qm_check(qm_material)")
+                continue
+
+            material_name = qm_material.data()
+
+            if not isinstance(material_name, str):
+                print("catalog_manage -- material_delete -- not isinstance(material_name, str)")
+                continue
+
+            if material_name in material_list:
+                material_list.remove(material_name)
+
+            if material_name.upper() in material_upper_list:
+                material_upper_list.remove(material_name.upper())
+
+            search_link_start = self.hierarchy.cat_model.index(0, col_cat_value, qm_material)
+
+            search_link = self.hierarchy.cat_model.match(search_link_start, user_data_type, link_code, -1,
+                                                         Qt.MatchExactly)
+
+            if len(search_link) == 0:
+                continue
+
+            if material_name.upper() in material_with_link_list:
+                material_with_link_list.remove(material_name.upper())
+
+            for qm_link in search_link:
+
+                if not qm_check(qm_link):
+                    print("catalog_manage -- material_delete -- not qm_check(qm_link)")
+                    continue
+
+                link_name = qm_link.data()
+
+                if link_name in link_list:
+                    link_list.remove(link_name)
+                    self.material_update_link_number(material_name=link_name)
+
+        return True
+
+    def material_to_new_folder(self) -> bool:
+
+        selection_qs_list = self.hierarchy.get_qs_selection_list()
+
+        if len(selection_qs_list) == 0:
+            print("catalog_manage -- material_to_new_folder -- len(selection_qs_list) == 0")
+            return False
+
+        selection_qs_list.sort()
+
+        return self.material_to_new_folder_action(qs_material_list=selection_qs_list)
+
+    def material_to_new_folder_action(self, qs_material_list: list, guid_new_folder=None) -> bool:
+
+        if not isinstance(qs_material_list, list):
+            print("catalog_manage -- material_to_new_folder_action -- len(selection_qs_list) == 0")
+            return False
+
+        # -------------
+
+        expanded_list = list()
+        qs_parent_dict = dict()
+
+        # -------------
+        # New folder to receive materials
+        # -------------
+
+        for qs_material in qs_material_list:
+
+            if not isinstance(qs_material, Material):
+                print("catalog_manage -- material_to_new_folder_action -- not isinstance(qs, Material)")
+                return False
+
+            qs_parent = qs_material.parent()
+
+            if not isinstance(qs_parent, Folder):
+                print("catalog_manage -- material_to_new_folder_action -- not isinstance(qs_parent, Folder)")
+                return False
+
+            # -------------
+
+            material_name = qs_material.text()
+
+            if not isinstance(material_name, str) or material_name == "":
+                print("catalog_manage -- material_to_new_folder_action -- not isinstance(material_name, str)")
+                return False
+
+            # -------------
+
+            qs_desc = qs_parent.child(qs_material.row(), col_cat_desc)
+
+            if not isinstance(qs_desc, Info):
+                print("catalog_manage -- material_to_new_folder_action -- not isinstance(qs_desc, Info)")
+                return False
+
+            # -------------
+
+            description = qs_desc.text()
+
+            if not isinstance(description, str):
+                print("catalog_manage -- material_to_new_folder_action -- not isinstance(description, str)")
+                return False
+
+            # -------------
+
+            guid_parent = qs_parent.data(user_guid)
+
+            if guid_parent in qs_parent_dict:
+                continue
+
+            folder_qs_list = self.allplan.creation.folder_line(value=material_name, description=description)
+
+            if not isinstance(folder_qs_list, list):
+                print("catalog_manage -- material_to_new_folder_action -- not isinstance(folder_qs_list, list)")
+                return False
+
+            if len(folder_qs_list) != col_cat_count:
+                print("catalog_manage -- material_to_new_folder_action -- len(folder_qs_list) != col_cat_count")
+                return False
+
+            qs_folder_new = folder_qs_list[col_cat_value]
+
+            if not isinstance(qs_folder_new, Folder):
+                print("catalog_manage -- material_to_new_folder_action -- not isinstance(qs_folder_new, Folder)")
+                return False
+
+            expanded_list.append(qs_folder_new)
+            qs_parent.appendRow(folder_qs_list)
+
+            # -------------
+
+            qs_parent_dict[guid_parent] = qs_folder_new
+
+        # -------------
+        # Déplacement
+        # -------------
+
+        for qs_material in qs_material_list:
+
+            if not isinstance(qs_material, Material):
+                print("catalog_manage -- material_to_new_folder_action -- not isinstance(qs, Material)")
+                return False
+
+            qs_parent = qs_material.parent()
+
+            if not isinstance(qs_parent, Folder):
+                print("catalog_manage -- material_to_new_folder_action -- not isinstance(qs_parent, Folder)")
+                return False
+
+            # -------------
+
+            guid_parent = qs_parent.data(user_guid)
+
+            if guid_parent not in qs_parent_dict:
+                continue
+
+            # -------------
+
+            qs_folder_new = qs_parent_dict[guid_parent]
+
+            if not isinstance(qs_folder_new, Folder):
+                print("catalog_manage -- material_to_new_folder_action -- not isinstance(qs_folder_new, Folder)")
+                return False
+
+            attributes_list = qs_folder_new.get_attribute_numbers_list()
+
+            if not isinstance(attributes_list, list):
+                print("catalog_manage -- material_to_new_folder_action -- not isinstance(attributes_list, list)")
+                return False
+
+            attributes_count = len(attributes_list)
+
+            # -------------
+
+            parent_child_count = qs_parent.rowCount()
+
+            # -------------
+            # Move material to new folder
+            # -------------
+
+            qs_first = None
+            guid_first = None
+
+            for row_index in reversed(range(parent_child_count)):
+
+                qs_child_current = qs_parent.child(row_index, 0)
+
+                if not isinstance(qs_child_current, Material):
+                    continue
+
+                qs_list = qs_parent.takeRow(row_index)
+
+                if len(qs_list) != col_cat_count:
+                    print("catalog_manage -- material_to_new_folder_action -- len(qs_list) != col_cat_count")
+                    return False
+
+                qs_folder_new.insertRow(attributes_count, qs_list)
+
+                if qs_first is None:
+
+                    qs_first = qs_list[col_cat_value]
+
+                    if not isinstance(qs_first, Material):
+                        print("catalog_manage -- material_to_new_folder_action -- not isinstance(qs_first, Material)")
+                        return False
+
+                    guid_first = qs_first.data(user_guid)
+
+            if guid_first is None:
+                print("catalog_manage -- material_to_new_folder_action -- guid_first is None")
+                return False
+
+            # -------------
+            # Classic
+            # -------------
+
+            if guid_new_folder is None:
+                self.history_move_materials(guid_parent=qs_parent.data(user_guid),
+                                            guid_material=guid_first,
+                                            guid_new_folder=qs_folder_new.data(user_guid),
+                                            material_name=qs_first.text())
+
+                continue
+
+            # -------------
+            # Redo
+            # -------------
+
+            qs_folder_new.setData(guid_new_folder, user_guid)
+
+        # -------------
+
+        self.hierarchy.select_list(selected_list=expanded_list, scrollto=True, expand=True)
+
+        return True
+
+    @staticmethod
+    def a___________________link_mange___________________():
+        pass
+
+    def link_refresh_code(self, link_name_before: str, link_name_after: str):
+
+        search_start: QModelIndex = self.hierarchy.cat_model.index(0, 0)
+
+        qm_model_list: list = self.hierarchy.cat_model.match(search_start,
+                                                             Qt.DisplayRole,
+                                                             link_name_before,
+                                                             -1,
+                                                             Qt.MatchExactly | Qt.MatchRecursive)
+
+        if len(qm_model_list) == 0:
+            return
+
+        for qm in qm_model_list:
+
+            qs: MyQstandardItem = self.hierarchy.get_qs_by_qm(qm=qm)
+
+            if not isinstance(qs, Link):
+                continue
+
+            qs.setText(link_name_after)
+
+    def link_get_structure(self, material_name: str, qs_parent: Material, visited: set) -> bool:
+
+        if material_name in visited:
+            print(f"catalog_manage -- link_get_structure -- {material_name} in visited")
+            return False
+
+        visited.add(material_name)
 
         qs_material: MyQstandardItem = self.get_qs_by_material_name(material_name)
 
         if not isinstance(qs_material, Material):
-            return
+            return False
 
         qs_children_list = qs_material.get_children_qs(children=True, attributes=False)
 
         if len(qs_children_list) == 0:
-            return
+            return True
 
         for qs_list in qs_children_list:
 
@@ -2281,32 +2077,105 @@ class CatalogDatas(QObject):
                 print("catalog_manage -- link_get_structure -- not isinstance(qs_list, list)")
                 continue
 
-            if len(qs_list) < qs_material.columnCount():
-                print("catalog_manage -- link_get_structure -- len(qs_list) < qs_material.columnCount()")
+            if len(qs_list) < col_cat_count:
+                print("catalog_manage -- link_get_structure -- len(qs_list) < col_cat_count")
                 continue
 
             qs_value = qs_list[col_cat_value]
             qs_desc = qs_list[col_cat_desc]
 
-            if not isinstance(qs_desc, MyQstandardItem):
-                print("catalog_manage -- link_get_structure -- not isinstance(qs_desc, MyQstandardItem)")
+            if not isinstance(qs_desc, Info):
+                print("catalog_manage -- link_get_structure -- not isinstance(qs_desc, Info)")
                 continue
 
             if isinstance(qs_value, Component):
-                qs_parent.appendRow([qs_value.clone_creation(), qs_desc.clone_creation()])
+                qs_component = QStandardItem(get_icon(component_icon), qs_value.text())
+                qs_component.setData(component_code, user_data_type)
+
+                qs_parent.appendRow([qs_component, QStandardItem(qs_desc.text())])
+                # print(f"Ajout component : {qs_component.text()} dans : {qs_parent.text()}")
                 continue
 
             if isinstance(qs_value, Link):
                 sub_material_name = qs_value.text()
 
-                qs_sub_material = QStandardItem(get_icon(link_icon), sub_material_name)
+                font = QStandardItem().font()
+                font.setBold(True)
 
-                self.link_get_structure(sub_material_name, qs_sub_material)
+                qs_sub_material = QStandardItem(get_icon(material_icon), sub_material_name)
+                qs_sub_material.setData(material_code, user_data_type)
+                qs_sub_material.setFont(font)
 
-                qs_parent.appendRow([qs_sub_material, qs_desc.clone_creation()])
+                qs_sub_description = QStandardItem(qs_desc.text())
+                qs_sub_description.setFont(font)
+
+                if self.link_get_structure(material_name=sub_material_name, qs_parent=qs_sub_material, visited=visited):
+                    qs_parent.appendRow([qs_sub_material, qs_sub_description])
+
+                    # print(f"Ajout Material : {qs_sub_material.text()} dans : {qs_parent.text()}")
+                    continue
+
+                qs_sub_material.setIcon(get_icon(error_icon))
+                qs_sub_material.setToolTip(self.tr("Liens : Boucle détéctée"))
+                qs_sub_material.setForeground(QColor("red"))
+
+                qs_sub_description.setForeground(QColor("red"))
+
+                qs_parent.appendRow([qs_sub_material, qs_sub_description])
+
+                print("catalog_manage -- link_get_structure -- loop detected")
+
+        visited.remove(material_name)
+        return True
+
+    def link_get_forbidden_list(self, material_name: str, forbidden_list: set,
+                                ignore_qm_link=None, ignore_parent_name="") -> bool:
+
+        if material_name in forbidden_list:
+            return True
+
+        forbidden_list.add(material_name)
+
+        search_start = self.hierarchy.cat_model.index(0, col_cat_value)
+
+        search = self.hierarchy.cat_model.match(search_start, Qt.DisplayRole, material_name, -1,
+                                                Qt.MatchExactly | Qt.MatchRecursive)
+
+        if len(search) == 0:
+            print("catalog_manage -- link_get_forbidden_list -- len(search) == 0 -> Error")
+            return False
+
+        for qm in search:
+
+            if not qm_check(qm):
+                print("catalog_manage -- link_get_forbidden_list -- not qm_check(qm):")
                 continue
 
-            print("catalog_manage -- link_get_structure -- error type element !!!")
+            if qm == ignore_qm_link and material_name == ignore_parent_name:
+                continue
+
+            if qm.data(user_data_type) != link_code:
+                continue
+
+            qm_parent = qm.parent()
+
+            if not qm_check(qm_parent):
+                print("catalog_manage -- link_get_forbidden_list -- not qm_check(qm_parent):")
+                continue
+
+            parent_name = qm_parent.data()
+
+            if not isinstance(parent_name, str):
+                print("catalog_manage -- link_get_forbidden_list -- not isinstance(parent_name, str)")
+                continue
+
+            if not self.link_get_forbidden_list(material_name=parent_name,
+                                                forbidden_list=forbidden_list,
+                                                ignore_qm_link=ignore_qm_link,
+                                                ignore_parent_name=ignore_parent_name):
+                continue
+
+        return True
 
     @staticmethod
     def a___________________catalog_delete___________________():
@@ -2314,19 +2183,17 @@ class CatalogDatas(QObject):
 
     def catalog_delete(self):
 
-        qs_selecion_list = self.get_qs_selection_list()
+        qs_selecion_list = self.hierarchy.get_qs_selection_list()
         selection_index = 0
         parent_selection = None
 
-        for qs in reversed(qs_selecion_list):
+        for qs_current in reversed(qs_selecion_list):
 
-            qs: MyQstandardItem
-
-            if qs is None:
-                print("onglet_hierarchie -- supprimer --> qstandarditem is None")
+            if not isinstance(qs_current, MyQstandardItem):
+                print("catalog_manage -- catalog_delete --> not isinstance(qs_current, MyQstandardItem)")
                 return None
 
-            children_list = qs.get_children_name(upper=False)
+            children_list = qs_current.get_children_name(upper=False)
             children_count = len(children_list)
 
             if children_count == 1:
@@ -2360,16 +2227,16 @@ class CatalogDatas(QObject):
             if question == QMessageBox.No:
                 continue
 
-            qs_parent = self.get_parent(qs)
+            qs_parent = self.hierarchy.get_parent(qs=qs_current)
 
             if qs_parent is None:
                 continue
 
-            current_row = qs.row()
+            row_current = qs_current.row()
 
-            if not self.material_is_deletable(qs=qs, delete=True):
+            if not self.material_delete(qs=qs_current):
 
-                if isinstance(qs, Material):
+                if isinstance(qs_current, Material):
 
                     msg(titre=application_title,
                         message=self.tr("Vous ne pouvez supprimer cet ouvrage, "
@@ -2385,11 +2252,11 @@ class CatalogDatas(QObject):
 
                 continue
 
-            ele_list = qs_parent.takeRow(current_row)
+            qs_list = qs_parent.takeRow(row_current)
 
-            self.undo_del_ele(qs_parent, qs, current_row, ele_list)
+            self.history_del_ele(qs_parent=qs_parent, qs_current=qs_current, row_current=row_current, qs_list=qs_list)
 
-            selection_index = current_row
+            selection_index = row_current
             parent_selection = qs_parent
 
         if isinstance(parent_selection, MyQstandardItem):
@@ -2406,7 +2273,7 @@ class CatalogDatas(QObject):
             else:
                 selection_item = parent_selection.child(selection_index, col_cat_value)
 
-            self.catalog_select_action([selection_item])
+            self.hierarchy.select_list(selected_list=[selection_item])
 
         self.change_made = True
 
@@ -2418,7 +2285,7 @@ class CatalogDatas(QObject):
 
     def catalog_copy_action(self, cut=False):
 
-        qs_selected_list = self.get_qs_selection_list()
+        qs_selected_list = self.hierarchy.get_qs_selection_list()
 
         ele_list = list()
 
@@ -2426,8 +2293,8 @@ class CatalogDatas(QObject):
 
             qs: MyQstandardItem
 
-            if qs is None:
-                print("onglet_hierarchie -- copier_recherche --> qs is None")
+            if not isinstance(qs, MyQstandardItem):
+                print("catalog_manage -- catalog_copy_action -- not isinstance(qs, MyQstandardItem)")
                 self.asc.boutons_hierarchie_coller(attribute_code)
                 return
 
@@ -2443,25 +2310,39 @@ class CatalogDatas(QObject):
 
             clipboard, clipboard_cut = self.get_clipboard(ele_type=ele_type, reset_clipboard=zero)
 
-            if clipboard is None:
-                print("onglet_hierarchie -- copier_recherche --> clipboard is None")
+            if not isinstance(clipboard, ClipboardDatas):
+                print("catalog_manage -- catalog_copy_action -- not isinstance(clipboard, ClipboardDatas)")
                 continue
 
             title = qs.text()
+
+            if not isinstance(title, str):
+                print("catalog_manage -- catalog_copy_action -- not isinstance(title, str)")
+                continue
+
             description = qs.get_attribute_value_by_number(number="207")
 
-            if description is None or description == "":
+            if not isinstance(description, str) or description == "":
                 text = title
             else:
                 text = f"{title} - {description}"
 
             current_row = qs.row()
-            qs_parent = self.get_parent(qs)
+
+            if current_row == -1:
+                print("catalog_manage -- catalog_copy_action -- current_row == -1")
+                continue
+
+            qs_parent = self.hierarchy.get_parent(qs=qs)
+
+            if not isinstance(qs_parent, QStandardItem):
+                print("catalog_manage -- catalog_copy_action -- not isinstance(qs_parent, QStandardItem)")
+                continue
 
             qs_list = self.catalog_copy_search_column(qs_parent, current_row)
 
-            if qs_list is None:
-                print("onglet_hierarchie -- copier_recherche --> qs_list is None")
+            if not isinstance(qs_list, list):
+                print("catalog_manage -- catalog_copy_action -- not isinstance(qs_list, list)")
                 self.asc.boutons_hierarchie_coller(None)
                 return
 
@@ -2477,25 +2358,23 @@ class CatalogDatas(QObject):
 
         qs_list = list()
 
-        column_count = qs_parent.columnCount()
-
-        for column_index in range(column_count):
+        for column_index in range(col_cat_count):
 
             qs = qs_parent.child(child_index, column_index)
 
-            if not isinstance(qs, (Folder, Material, Component, Attribute, Link, Info)):
-                print("onglet_hierarchie -- copier_colonnes --> qstandarditem is None")
+            if not isinstance(qs, MyQstandardItem):
+                print("catalog_manage -- catalog_copy_search_column -- not isinstance(qs, MyQstandardItem)")
                 return None
 
-            qs_clone = qs.clone_creation()
+            qs_clone = qs.clone_creation(new=False)
 
             if column_index == col_cat_value and qs.hasChildren():
-                qs.clone_children(qs_original=qs, qs_destination=qs_clone)
+                qs.clone_children(qs_original=qs, qs_destination=qs_clone, new=False)
 
             qs_list.append(qs_clone)
 
-        if len(qs_list) != column_count:
-            print("onglet_hierarchie -- copier_colonnes --> len(liste_qstandarditem) != columnCount()")
+        if len(qs_list) != col_cat_count:
+            print("catalog_manage -- catalog_copy_search_column -- len(liste_qstandarditem) != col_cat_count")
             return None
 
         return qs_list
@@ -2518,33 +2397,33 @@ class CatalogDatas(QObject):
         if clipboard_cut.len_datas() == 0:
             return
 
-        self.hierarchie_couper_coller_action(clipboard_cut)
+        self.hierarchie_couper_coller_action(clipboard_cut=clipboard_cut)
 
-    def hierarchie_couper_coller_action(self, presse_papier_couper: ClipboardDatas):
+    def hierarchie_couper_coller_action(self, clipboard_cut: ClipboardDatas):
 
-        liste_elements = presse_papier_couper.get_values_list()
+        liste_elements = clipboard_cut.get_values_list()
 
         for liste_datas in liste_elements:
             liste_datas: list
 
             # liste_datas = [qstandarditem_parent, qstandarditem]
 
-            qstandarditem_parent: MyQstandardItem = liste_datas[0]
+            qs_parent: MyQstandardItem = liste_datas[0]
             datas: MyQstandardItem = liste_datas[1]
 
-            if not isinstance(qstandarditem_parent, QStandardItem):
+            if not isinstance(qs_parent, QStandardItem):
                 continue
 
             if isinstance(datas, MyQstandardItem):
 
                 index_row: int = datas.row()
 
-                qstandarditem_sup = qstandarditem_parent.child(index_row, col_cat_value)
+                qstandarditem_sup = qs_parent.child(index_row, col_cat_value)
 
                 if qstandarditem_sup != datas:
                     continue
 
-                qstandarditem_parent.takeRow(index_row)
+                qs_parent.takeRow(index_row)
 
             elif isinstance(datas, list):
 
@@ -2552,22 +2431,34 @@ class CatalogDatas(QObject):
 
                     index_row: int = qs.row()
 
-                    qstandarditem_sup = qstandarditem_parent.child(index_row, col_cat_value)
+                    qstandarditem_sup = qs_parent.child(index_row, col_cat_value)
 
                     if qstandarditem_sup != qs:
                         continue
 
-                    qstandarditem_parent.takeRow(index_row)
+                    qs_parent.takeRow(index_row)
 
-        # reset cup clipboard !
+        # reset cut clipboard !
 
-        presse_papier_couper.clear()
+        clipboard_cut.clear()
         self.change_made = True
+
+    def hierarchy_paste_datas(self, clipboard: ClipboardDatas):
+        pass
 
     def hierarchie_coller_datas(self, pressepapier: ClipboardDatas, presse_papier_couper: ClipboardDatas,
                                 titre_spe="", id_ele="0") -> bool:
 
+        # ---- library ----
+
         bible_externe_open = self.asc.library_widget.isVisible()
+
+        if not isinstance(presse_papier_couper, ClipboardDatas):
+            print(f"catalog_manage -- hierarchie_coller_datas -- not isinstance(presse_papier_couper, ClipboardDatas)")
+            return
+
+        # ---- cut ----
+
         couper = presse_papier_couper.len_datas() != 0
 
         type_element_futur = pressepapier.type_element
@@ -2583,7 +2474,7 @@ class CatalogDatas(QObject):
             titre_spe = pressepapier.get_real_title(titre_spe, id_ele)
 
         if couper:
-            liste_copier_enfants = [liste_qstandarditem_pp_row[0]
+            liste_copier_enfants = [liste_qstandarditem_pp_row[col_cat_value]
                                     for liste_qstandarditem_pp_row in liste_qs_futur_tous]
 
         else:
@@ -2606,12 +2497,28 @@ class CatalogDatas(QObject):
 
         for dict_datas in datas:
             for index_liste, liste_qs_futur in enumerate(liste_qs_futur_tous):
-                qs_futur: MyQstandardItem = liste_qs_futur[0]
+
+                if not isinstance(liste_qs_futur, list):
+                    print(f"catalog_manage -- hierarchie_coller_datas -- not isinstance(liste_qs_futur, list)")
+                    continue
+
+                if len(liste_qs_futur) != col_cat_count:
+                    if not isinstance(liste_qs_futur, list):
+                        print(f"catalog_manage -- hierarchie_coller_datas -- len(liste_qs_futur) != column_count")
+                        continue
+
+                qs_futur: MyQstandardItem = liste_qs_futur[col_cat_value]
+
+                if not isinstance(qs_futur, MyQstandardItem):
+                    print(f"catalog_manage -- hierarchie_coller_datas -- not isinstance(qs_futur, MyQstandardItem)")
+                    continue
+
                 dict_datas["ajouter_enfants"] = qs_futur in liste_copier_enfants
 
-        datas: list = self.recherche_existant(datas=datas,
-                                              titre_spe=titre_spe,
-                                              liste_titre_futur=liste_titres_futur)
+        if not couper:
+            self.recherche_existant(datas=datas,
+                                    titre_spe=titre_spe,
+                                    liste_titre_futur=liste_titres_futur)
 
         if len(datas) == 0:
             if bible_externe_open:
@@ -2621,46 +2528,88 @@ class CatalogDatas(QObject):
         liste_selection_futur = list()
 
         for dict_datas in datas:
-            qs_parent: QStandardItem = dict_datas["qstandarditem_destination"]
-            nom: str = dict_datas["nom_parent"]
-            index_insertion: int = dict_datas["index_insertion"]
-            update: bool = dict_datas["update"]
-            remplacer: bool = dict_datas["remplacer"]
-            ignorer: bool = dict_datas["ignorer"]
 
-            qs_actuel: QStandardItem = dict_datas["qs_actuel"]
-            # nom_actuel: str = dict_datas["nom_actuel"]
+            qs_parent = dict_datas.get("qstandarditem_destination")
+
+            if not isinstance(qs_parent, QStandardItem):
+                print(f"catalog_manage -- hierarchie_coller_datas -- not isinstance(qs_parent, QStandardItem)")
+                continue
+
+            nom = dict_datas.get("nom_parent")
+
+            if not isinstance(nom, str):
+                print(f"catalog_manage -- hierarchie_coller_datas -- not isinstance(nom, str)")
+                continue
+
+            index_insertion = dict_datas.get("index_insertion")
+
+            if not isinstance(index_insertion, int):
+                print(f"catalog_manage -- hierarchie_coller_datas -- not isinstance(index_insertion, int)")
+                continue
+
+            update: bool = dict_datas.get("update")
+            remplacer: bool = dict_datas.get("remplacer")
+            ignorer: bool = dict_datas.get("ignorer")
+
+            if not isinstance(update, bool) or not isinstance(remplacer, bool) or not isinstance(ignorer, bool):
+                print(f"catalog_manage -- hierarchie_coller_datas -- not isinstance(update, bool)")
+                continue
+
+            qs_actuel = dict_datas.get("qs_actuel")
+
+            if not isinstance(qs_actuel, QStandardItem):
+                print(f"catalog_manage -- hierarchie_coller_datas -- not isinstance(qs_actuel, MyQstandardItem)")
+                continue
+
             index_actuel = qs_actuel.row()
 
             if index_actuel == -1 and nom == self.tr("Racine de la hiérarchie"):
-                index_actuel = self.cat_model.invisibleRootItem().rowCount()
+                index_actuel = self.hierarchy.cat_model.invisibleRootItem().rowCount()
             elif index_actuel == -1:
                 continue
 
             if remplacer:
-                self.material_is_deletable(qs=qs_actuel, delete=True)
+                self.material_delete(qs=qs_actuel)
                 qs_parent.takeRow(qs_actuel.row())
 
             if ignorer:
                 continue
 
             for index_liste, liste_qs_futur in enumerate(liste_qs_futur_tous):
+
+                if not isinstance(liste_qs_futur, list):
+                    print(f"catalog_manage -- hierarchie_coller_datas -- not isinstance(liste_qs_futur, list)")
+                    continue
+
+                if len(liste_qs_futur) != col_cat_count:
+                    print(f"catalog_manage -- hierarchie_coller_datas -- len(liste_qs_futur) != column_count")
+                    continue
+
                 index_final = index_insertion + index_liste
 
-                qs_futur: MyQstandardItem = liste_qs_futur[0]
+                qs_futur = liste_qs_futur[0]
+
+                if not isinstance(qs_futur, MyQstandardItem):
+                    print(f"catalog_manage -- hierarchie_coller_datas -- not isinstance(qs_futur, MyQstandardItem)")
+                    continue
+
                 texte_futur = qs_futur.text()
+
+                if not isinstance(texte_futur, str):
+                    print(f"catalog_manage -- hierarchie_coller_datas -- not isinstance(texte_futur, str)")
+                    continue
 
                 ajouter_enfants = qs_futur in liste_copier_enfants
 
-                if update:
-                    txt = "Update"
-                elif remplacer:
-                    txt = "Remplacer"
-                else:
-                    txt = "Copie"
+                # if update:
+                #     txt = "Update"
+                # elif remplacer:
+                #     txt = "Remplacer"
+                # else:
+                #     txt = "Copie"
 
-                print(f"catalog_manage -- hierarchie_coller_datas -- {txt} de : '{texte_futur}' dans '{nom}' "
-                      f"à l'index : {index_final} -- avec enfants : {ajouter_enfants}")
+                # print(f"catalog_manage -- hierarchie_coller_datas -- {txt} de : '{texte_futur}' dans '{nom}' "
+                #       f"à l'index : {index_final} -- avec enfants : {ajouter_enfants}")
 
                 # if remplacer:
                 #     index_final = index_actuel
@@ -2670,13 +2619,16 @@ class CatalogDatas(QObject):
                 # if ignorer:
                 #     continue
 
-                self.coller_update(qs_parent=qs_parent,
-                                   liste_qs_futur=liste_qs_futur,
-                                   index_insertion=index_final,
-                                   index_actuel=index_actuel,
-                                   ajouter_enfant=ajouter_enfants,
-                                   couper=couper,
-                                   update=update)
+                if self.coller_update(qs_parent=qs_parent,
+                                      liste_qs_futur=liste_qs_futur,
+                                      index_insertion=index_final,
+                                      index_actuel=index_actuel,
+                                      ajouter_enfant=ajouter_enfants,
+                                      couper=couper,
+                                      update=update,
+                                      start=True) == -1:
+                    presse_papier_couper.clear()
+                    return
 
                 qm = qs_parent.child(index_final, col_cat_value)
 
@@ -2691,7 +2643,9 @@ class CatalogDatas(QObject):
                 if qm not in liste_selection_futur:
                     liste_selection_futur.append(qm)
 
-        self.catalog_select_action(liste_selection_futur, len(liste_selection_futur) != 1)
+        self.hierarchy.select_list(selected_list=liste_selection_futur,
+                                   scrollto=len(liste_selection_futur) != 1,
+                                   expand=True)
         return True
 
     def recherche_enfants(self, liste_qs_futur_tous: list):
@@ -2796,25 +2750,26 @@ class CatalogDatas(QObject):
 
         nb_titre_futur = len(liste_titre_futur)
 
-        liste_selection_actuel = self.get_qs_selection_list()
+        liste_selection_actuel = self.hierarchy.get_qs_selection_list()
         liste_selection_actuel.sort()
         # liste_parent_actuel = list()
 
         datas = list()
 
         if len(liste_selection_actuel) == 0:
-            liste_selection_actuel.append(self.cat_model.invisibleRootItem())
+            liste_selection_actuel.append(self.hierarchy.cat_model.invisibleRootItem())
 
         for qs_selection in liste_selection_actuel:
 
-            if not isinstance(qs_selection, (Folder, Material, Component, Link)):
+            if not isinstance(qs_selection, QStandardItem):
+                print("catalog_manage -- recherche_localisation -- not isinstance(qs_selection, QStandardItem)")
                 continue
 
             index_selection = qs_selection.row()
 
-            if qs_selection == self.cat_model.invisibleRootItem():
+            if qs_selection == self.hierarchy.cat_model.invisibleRootItem():
 
-                elements_compatibles = {self.tr("Frère"): [qs_selection, self.cat_model.rowCount()]}
+                elements_compatibles = {self.tr("Frère"): [qs_selection, self.hierarchy.cat_model.rowCount()]}
 
             else:
 
@@ -2838,7 +2793,7 @@ class CatalogDatas(QObject):
                 qs_parent_actuel: MyQstandardItem = liste_frere[0]
                 parent_type_actuel = qs_parent_actuel.data(user_data_type)
 
-                if qs_parent_actuel == self.cat_model.invisibleRootItem():
+                if qs_parent_actuel == self.hierarchy.cat_model.invisibleRootItem():
                     parent_texte_actuel = self.tr("Racine de la hiérarchie")
                 else:
                     parent_texte_actuel = qs_parent_actuel.text()
@@ -2885,9 +2840,9 @@ class CatalogDatas(QObject):
             if qstandarditem_destination is None:
                 continue
 
-            if qstandarditem_destination == self.cat_model.invisibleRootItem():
+            if qstandarditem_destination == self.hierarchy.cat_model.invisibleRootItem():
 
-                ses_enfants = self.get_root_children_name()
+                ses_enfants = self.hierarchy.get_root_children_name()
 
             else:
 
@@ -2899,7 +2854,7 @@ class CatalogDatas(QObject):
             #
             # liste_parent_actuel.append(qstandarditem_destination)
 
-            if qstandarditem_destination == self.cat_model.invisibleRootItem():
+            if qstandarditem_destination == self.hierarchy.cat_model.invisibleRootItem():
                 nom_parent = self.tr("Racine de la hiérarchie")
             else:
                 nom_parent = qstandarditem_destination.text()
@@ -3037,6 +2992,7 @@ class CatalogDatas(QObject):
                 reponse_exist = msgbox.reponse
 
             if reponse_exist == QMessageBox.Cancel:
+                datas.clear()
                 return list()
 
             if reponse_exist == QMessageBox.YesAll:
@@ -3077,10 +3033,19 @@ class CatalogDatas(QObject):
         return datas
 
     def coller_update(self, qs_parent: MyQstandardItem, liste_qs_futur: list, index_insertion: int, index_actuel: int,
-                      ajouter_enfant: bool, couper=False, update=False) -> int:
+                      ajouter_enfant: bool, couper=False, update=False, start=False) -> int:
 
-        qs_futur: MyQstandardItem = liste_qs_futur[0]
+        qs_futur = liste_qs_futur[col_cat_value]
+
+        if not isinstance(qs_futur, MyQstandardItem):
+            print(f"catalog_manage -- coller_update -- not isinstance(qs_futur, MyQstandardItem)")
+            return -1
+
         texte_futur = qs_futur.text()
+
+        if not isinstance(texte_futur, str):
+            print(f"catalog_manage -- coller_update -- not isinstance(texte_futur, str)")
+            return -1
 
         index_recherche = self.recherche_index_valeur(qs_parent=qs_parent,
                                                       valeur=texte_futur, index_initial=index_actuel)
@@ -3091,16 +3056,21 @@ class CatalogDatas(QObject):
             nouveau_qs_parent = self.coller_creation(qs_parent=qs_parent,
                                                      index_insertion=index_insertion,
                                                      liste_qs_futur=liste_qs_futur,
-                                                     couper=couper)
+                                                     couper=couper,
+                                                     start=start)
+
+            if not isinstance(nouveau_qs_parent, QStandardItem):
+                return -1
 
             attributes_count = nouveau_qs_parent.rowCount()
             index_tps = index_insertion + attributes_count
 
         else:
 
-            self.update_with(qs_parent=qs_parent,
-                             index_actuel=index_recherche,
-                             liste_qs_futur=liste_qs_futur)
+            if not self.update_with(qs_parent=qs_parent,
+                                    index_actuel=index_recherche,
+                                    liste_qs_futur=liste_qs_futur):
+                return -1
 
             nouveau_qs_parent = qs_parent.child(index_recherche, col_cat_value)
 
@@ -3116,140 +3086,184 @@ class CatalogDatas(QObject):
 
         for index_insertion, liste_qs_futur in enumerate(liste_enfants):
 
-            if len(liste_qs_futur) == 0:
-                return index_tps
+            if not isinstance(liste_qs_futur, list):
+                print(f"catalog_manage -- coller_update -- not isinstance(liste_qs_futur, list)")
+                return -1
 
-            self.coller_update(qs_parent=nouveau_qs_parent,
-                               liste_qs_futur=liste_qs_futur,
-                               index_insertion=index_insertion + attributes_count,
-                               index_actuel=index_insertion,
-                               ajouter_enfant=ajouter_enfant,
-                               couper=couper,
-                               update=update)
+            if len(liste_qs_futur) != col_cat_count:
+                if not isinstance(liste_qs_futur, list):
+                    print(f"catalog_manage -- coller_update -- len(liste_qs_futur) != column_count")
+                    return -1
+
+            if self.coller_update(qs_parent=nouveau_qs_parent,
+                                  liste_qs_futur=liste_qs_futur,
+                                  index_insertion=index_insertion + attributes_count,
+                                  index_actuel=index_insertion,
+                                  ajouter_enfant=ajouter_enfant,
+                                  couper=couper,
+                                  update=update,
+                                  start=False) == -1:
+                return -1
 
         return index_tps
 
     def coller_creation(self, qs_parent: QStandardItem, index_insertion: int, liste_qs_futur: list,
-                        couper: bool) -> QStandardItem:
+                        couper: bool, start=False) -> QStandardItem:
 
-        print("catalog_manage -- coller_creation")
+        # print("catalog_manage -- coller_creation -- start")
 
-        liste_cloner = list()
+        # -------------------
+        # Verification
+        # -------------------
 
-        for qs_futur in liste_qs_futur:
+        if len(liste_qs_futur) != col_cat_count:
+            print("catalog_manage -- coller_creation -- len(liste_qs_futur) != col_cat_count")
+            return None
 
-            qs_futur: Material
+        qs_value = liste_qs_futur[col_cat_value]
+        qs_desc = liste_qs_futur[col_cat_desc]
+        qs_number = liste_qs_futur[col_cat_number]
 
-            qs_clone: Material = qs_futur.clone_creation()
+        if (not isinstance(qs_value, MyQstandardItem) or not isinstance(qs_desc, Info) or
+                not isinstance(qs_number, Info) or not isinstance(qs_parent, QStandardItem)):
+            print("catalog_manage -- coller_creation -- not isinstance(qs_value, MyQstandardItem)")
+            return None
+
+        # -------------------
+        # Datas
+        # -------------------
+
+        ele_type = qs_value.data(user_data_type)
+
+        value = qs_value.text()
+        desc = qs_desc.text()
+
+        parent_name = qs_parent.text()
+
+        if not isinstance(value, str) or not isinstance(desc, str) or not isinstance(parent_name, str):
+            print("catalog_manage -- coller_creation -- not isinstance(value, str)")
+            return None
+
+        # -------------------
+        # Clone
+        # -------------------
+
+        qs_value_cloned = qs_value.clone_creation(new=not couper)
+        qs_desc_cloned = qs_desc.clone_creation(new=not couper)
+        qs_number_cloned = qs_number.clone_creation(new=not couper)
+
+        # -------------------
+        # Chacking Material Name
+        # -------------------
+
+        if not couper:
+
+            self.coller_gestion_nom_ouvrage(qs_value_cloned)
+
+            if isinstance(qs_value_cloned, Folder):
+
+                if qs_parent == self.hierarchy.cat_model.invisibleRootItem():
+                    liste_dossiers = self.hierarchy.get_root_children_name()
+                else:
+                    if isinstance(qs_parent, MyQstandardItem):
+                        liste_dossiers = qs_parent.get_children_name(upper=True)
+                    else:
+                        liste_dossiers = list()
+
+                value = find_new_title(qs_value_cloned.text(), liste_dossiers)
+
+                qs_value_cloned.setText(value)
+
+        if ele_type == link_code:
+
+            if value.upper() not in material_upper_list:
+                impossible_message = self.tr("Impossible de coller ce lien")
+                inexist_message = self.tr("L'ouvrage correspondant n'existe pas")
+
+                msg(titre=application_title,
+                    message=f"{impossible_message} : {value}.<br><b>{inexist_message}!</b>",
+                    icone_critique=True)
+                return QStandardItem()
+
+            forbidden_list = set()
+            copy_valid = self.link_get_forbidden_list(material_name=parent_name, forbidden_list=forbidden_list)
+
+            if value in forbidden_list:
+                copy_valid = False
+
+            if not copy_valid:
+                print("catalog_manage -- coller_creation -- loop error")
+
+                impossible_message = self.tr("Impossible de coller ce lien")
+                loop_message = self.tr("Liens : Boucle détéctée")
+
+                msg(titre=application_title,
+                    message=f"{impossible_message} : {qs_value_cloned.text()}.<br><b>{loop_message}!</b>",
+                    icone_critique=True)
+                return QStandardItem()
 
             if not couper:
-                self.coller_gestion_nom_ouvrage(qs_clone)
+                link_list.append(value)
 
-                if isinstance(qs_clone, Folder):
+            parent_name = parent_name.upper()
 
-                    if qs_parent == self.cat_model.invisibleRootItem():
-                        liste_dossiers = self.get_root_children_name()
-                    else:
-                        if isinstance(qs_parent, MyQstandardItem):
-                            liste_dossiers = qs_parent.get_children_name(upper=True)
-                        else:
-                            liste_dossiers = list()
+            if parent_name not in material_with_link_list:
+                material_with_link_list.append(parent_name)
 
-                    nouveau_nom = find_new_title(qs_clone.text(), liste_dossiers)
+            self.material_update_link_number(material_name=value)
 
-                    qs_clone.setText(nouveau_nom)
+        liste_cloner = [qs_value_cloned, qs_desc_cloned, qs_number_cloned]
 
-            if isinstance(qs_clone, Link):
-                nom_ouvrage_lien = qs_clone.text()
+        if qs_value.hasChildren():
+            qs_value.clone_attributes(qs_original=qs_value, qs_destination=qs_value_cloned, new=not couper)
 
-                if not couper:
-                    link_list.append(nom_ouvrage_lien)
+        # ----------
 
-                qs_text = qs_parent.text()
+        child_count = qs_parent.rowCount()
 
-                if not isinstance(qs_text, str):
-                    continue
+        if index_insertion > child_count:
+            index_insertion = child_count - 1
 
-                qs_text = qs_text.upper()
-
-                if qs_text not in material_with_link_list:
-                    material_with_link_list.append(qs_text)
-
-                self.material_update_link_number(nom_ouvrage_lien)
-
-            liste_cloner.append(qs_clone)
-
-            if qs_futur.column() == col_cat_value:
-                print(f"catalog_manage -- creation -- {qs_futur.text()} ({qs_futur.data(user_data_type)})")
-
-            if qs_futur.hasChildren():
-                qs_futur.clone_attributes(qs_orignal=qs_futur, qs_destination=qs_clone)
+        # ----------
 
         qs_parent.insertRow(index_insertion, liste_cloner)
 
         if couper:
 
-            qs_actuel = liste_cloner[col_cat_value]
+            full_title = f"{value} - {desc}"
 
-            if not isinstance(qs_actuel, MyQstandardItem):
-                return liste_cloner[0]
+            clipboard, clipboard_cut = self.get_clipboard(ele_type=ele_type, reset_clipboard=False)
 
-            type_element = qs_actuel.data(user_data_type)
-            titre_actuel = qs_actuel.text()
+            if not isinstance(clipboard, ClipboardDatas) or not isinstance(clipboard_cut, ClipboardDatas):
+                return qs_value_cloned
 
-            qs_description = liste_cloner[col_cat_desc]
+            qs_parent_actuel, row_current = clipboard_cut.get_cut_datas(full_title)
 
-            if not isinstance(qs_description, Info):
-                return liste_cloner[0]
+            if not isinstance(qs_parent_actuel, QStandardItem) or not isinstance(row_current, int):
+                return qs_value_cloned
 
-            description = qs_description.text()
+            if qs_parent == qs_parent_actuel and row_current > index_insertion:
+                row_current -= 1
 
-            full_title = f"{titre_actuel} - {description}"
+            self.history_cut_ele(guid_parent_new=qs_parent_actuel.data(user_guid),
+                                 qs_current=qs_value_cloned,
+                                 row_new=row_current)
+        elif start:
 
-            _, presse_papier_couper = self.get_clipboard(ele_type=type_element, reset_clipboard=False)
+            self.history_add_ele(qs_current=qs_value_cloned, paste=True)
 
-            presse_papier_couper: ClipboardDatas
+        # print(f"catalog_manage -- creation -- Fin")
+        return qs_value_cloned
 
-            if presse_papier_couper is None:
-                return liste_cloner[0]
+    def update_with(self, qs_parent: QStandardItem, index_actuel, liste_qs_futur: list) -> bool:
 
-            qs_parent_actuel, row_actuel = presse_papier_couper.get_cut_datas(full_title)
-
-            if qs_parent_actuel is None:
-                return liste_cloner[0]
-
-            self.undo_cut_ele(qs_parent_actuel=qs_parent_actuel, qs_parent_futur=qs_parent,
-                              qs_actuel=liste_cloner[col_cat_value],
-                              row_actuel=row_actuel, row_futur=index_insertion,
-                              liste_ele=liste_cloner)
-        else:
-            self.undo_add_ele(qs_parent=qs_parent, qs_actuel=liste_cloner[0], index_ele=index_insertion,
-                              liste_ele=liste_cloner, coller=True)
-
-        if qs_parent == self.cat_model.invisibleRootItem():
-            return liste_cloner[0]
-
-        if not isinstance(qs_parent, Component) and not isinstance(qs_parent, Link):
-
-            qm_filter: QModelIndex = self.map_to_filter(qs_parent.index())
-
-            if qm_filter is not None:
-                self.ui.hierarchy.expand(qm_filter)
-
-        print(f"catalog_manage -- creation -- Fin")
-        return liste_cloner[0]
-
-    def update_with(self, qs_parent: QStandardItem, index_actuel, liste_qs_futur: list):
-
-        print("catalog_manage -- update_with")
+        # print("catalog_manage -- update_with")
 
         # --------------------------------------------------------------------------------------
         # Mise à jour de l'élément actuel : colonnes  = valeur, description, index, numero, nom
         # --------------------------------------------------------------------------------------
 
-        nb_colonnes = qs_parent.columnCount()
-
-        if len(liste_qs_futur) != nb_colonnes:
+        if len(liste_qs_futur) != col_cat_count:
             return False
 
         qs_actuel = qs_parent.child(index_actuel, col_cat_value)
@@ -3315,7 +3329,7 @@ class CatalogDatas(QObject):
             liste = list()
             numero_actuel = ""
 
-            for index_colonne in range(nb_colonnes):
+            for index_colonne in range(col_cat_count):
                 qs_tps = qs_actuel.child(index_child_actuel, index_colonne)
 
                 if qs_tps is None:
@@ -3343,12 +3357,12 @@ class CatalogDatas(QObject):
             if not isinstance(qs_val_futur, Attribute):
                 continue
 
-            qs_numero_futur = qs_futur.child(index_child_futur, col_cat_number)
+            qs_number_futur = qs_futur.child(index_child_futur, col_cat_number)
 
-            if qs_val_futur is None:
+            if not isinstance(qs_number_futur, Info):
                 return False
 
-            numero_futur = qs_numero_futur.text()
+            numero_futur = qs_number_futur.text()
 
             # --------------------------------------------------------------------------------------
             # Mise à jour attribut
@@ -3382,72 +3396,31 @@ class CatalogDatas(QObject):
 
             index_insertion = qs_actuel.get_attribute_insertion_index(number=numero_futur)
 
-            nb_colonnes_futur = qs_futur.columnCount()
             liste_qs_creation = list()
 
-            for index_colonne in range(nb_colonnes_futur):
-                liste_qs_creation.append(qs_futur.child(index_child_futur, index_colonne).clone_creation())
+            for index_colonne in range(col_cat_count):
+                new_qs = qs_futur.child(index_child_futur, index_colonne).clone_creation(new=True)
+
+                liste_qs_creation.append(new_qs)
 
             qs_actuel.insertRow(index_insertion, liste_qs_creation)
 
-        if qs_parent == self.cat_model.invisibleRootItem():
-            return
+        if qs_parent == self.hierarchy.cat_model.invisibleRootItem():
+            return True
 
         if not isinstance(qs_parent, Component) and not isinstance(qs_parent, Link):
 
-            qmodelindex_filtre: QModelIndex = self.map_to_filter(qs_parent.index())
+            qmodelindex_filtre: QModelIndex = self.hierarchy.map_to_filter(qm=qs_parent.index())
 
             if qmodelindex_filtre is not None:
-                self.ui.hierarchy.expand(qmodelindex_filtre)
+                self.hierarchy.expand(qmodelindex_filtre)
 
-        print("catalog_manage -- update_with -- Fin")
+        # print("catalog_manage -- update_with -- Fin")
         return True
-
-    def coller_cloner(self, qs_destination: MyQstandardItem, liste_qstandarditem: list, index_insertion: int,
-                      ajouter_enfant: bool, couper=False, update=False):
-
-        liste_cloner = list()
-
-        for qstandarditem_creation in liste_qstandarditem:
-
-            qstandarditem_creation: MyQstandardItem
-
-            qs_clone: MyQstandardItem = qstandarditem_creation.clone_creation()
-
-            if isinstance(qs_clone, Link):
-                nom_ouvrage_lien = qs_clone.text()
-
-                if not couper or not update:
-                    link_list.append(nom_ouvrage_lien)
-
-                self.material_update_link_number(nom_ouvrage_lien)
-
-            if qstandarditem_creation.hasChildren() and ajouter_enfant:
-                qstandarditem_creation.clone_children(qs_original=qstandarditem_creation, qs_destination=qs_clone)
-
-            if not couper and not update:
-                self.coller_gestion_nom_ouvrage(qs_clone)
-
-            liste_cloner.append(qs_clone)
-
-        qs_destination.insertRow(index_insertion, liste_cloner)
-
-        if qs_destination == self.cat_model.invisibleRootItem():
-            return
-
-        if not isinstance(qs_destination, Component) and not isinstance(qs_destination, Link):
-
-            qmodelindex_filtre: QModelIndex = self.map_to_filter(qs_destination.index())
-
-            if qmodelindex_filtre is not None:
-                self.ui.hierarchy.expand(qmodelindex_filtre)
 
     def coller_gestion_nom_ouvrage(self, qs_clone: MyQstandardItem):
 
-        if isinstance(qs_clone, Attribute):
-            return
-
-        if isinstance(qs_clone, Component) or isinstance(qs_clone, Link):
+        if isinstance(qs_clone, Attribute) or isinstance(qs_clone, Component) or isinstance(qs_clone, Link):
             return
 
         if isinstance(qs_clone, Material):
@@ -3471,6 +3444,36 @@ class CatalogDatas(QObject):
                 material_upper_list.append(texte_upper)
                 qs_clone.setText(texte)
 
+            # ----------------
+            # link
+            # ----------------
+
+            if texte_upper in material_with_link_list:
+                return
+
+            qs_children_list = qs_clone.get_children_qs(children=True, attributes=False)
+
+            if len(qs_children_list) == 0:
+                return
+
+            for qs_column_list in qs_children_list:
+
+                if not isinstance(qs_column_list, list):
+                    print("catalog_mane -- coller_gestion_nom_ouvrage -- not isinstance(qs_column_list, list)")
+                    return
+
+                if len(qs_column_list) != col_cat_count:
+                    print("catalog_mane -- coller_gestion_nom_ouvrage -- len(qs_column_list) != columns_count")
+                    return
+
+                qs_value = qs_column_list[0]
+
+                if not isinstance(qs_value, Link):
+                    continue
+
+                if texte_upper not in material_with_link_list:
+                    material_with_link_list.append(texte_upper)
+                    return
             return
 
         nb_enfants = qs_clone.rowCount()
@@ -3511,201 +3514,151 @@ class CatalogDatas(QObject):
     def a___________________attribute_delete______():
         pass
 
-    def attribute_delete(self):
+    def attribute_delete(self) -> bool:
 
-        selection_list = self.ui.attributes_detail.selectedItems()
+        qs_selection_list = self.hierarchy.get_qs_selection_list()
 
-        if len(selection_list) == 0:
-            return
+        if len(qs_selection_list) != 1:
+            print("catalog_manage -- attribute_delete -- len(qs_selection_list) != 1")
+            return False
 
-        qm_list: list = self.get_filter_selection_list()
+        qs_parent = qs_selection_list[0]
 
-        if len(qm_list) > 1:
-            return
+        if not isinstance(qs_parent, (Material, Component)):
+            print("catalog_manage -- attribute_delete -- not isinstance(qs_current, (Material, Component))")
+            return False
 
-        qm: QModelIndex = qm_list[0]
-        ele_type = qm.data(user_data_type)
+        # -------------
 
-        if ele_type != material_code and ele_type != component_code:
-            return
+        number_list = self.get_attribute_number_selection_list()
 
-        for qlistwidgetitem in selection_list:
+        if not isinstance(number_list, set):
+            print("catalog_manage -- attribute_delete -- not isinstance(number_list, set)")
+            return False
 
-            qlistwidgetitem: QListWidgetItem
+        if len(number_list) == 0:
+            print("catalog_manage -- attribute_delete -- len(number_list) == 0")
+            return False
 
-            widget_type = qlistwidgetitem.data(user_data_type)
-            number = qlistwidgetitem.data(user_data_number)
+        # -------------
 
-            if widget_type == type_nom or widget_type == type_code or \
-                    widget_type == type_lien:
+        for number in number_list:
+
+            if number == attribute_default_base or number == "207":
                 continue
 
-            detail_row = self.ui.attributes_detail.row(qlistwidgetitem)
+            self.attribute_delete_action(qs_parent=qs_parent, number=number)
 
-            if widget_type == type_layer:
-                if number == attribute_val_default_layer_first:
-                    self.attribute_delete_ation(qm, number, detail_row)
-                    continue
+        # -------------
 
-            if widget_type == type_fill:
-                if number == attribute_val_default_fill_first:
-                    self.attribute_delete_ation(qm, number, detail_row)
-                    continue
+        self.hierarchy.select_list(selected_list=[qs_parent], scrollto=False)
 
-            if widget_type == type_room:
-                if number == attribute_val_default_room_first:
-                    self.attribute_delete_ation(qm, number, detail_row)
-                    continue
+        self.ui.attributes_detail.setFocus()
 
-            self.attribute_delete_ation(qm, number, detail_row)
-
-    def attribute_delete_ation(self, qm: QModelIndex, number: str, detail_row: int):
-
-        qs: MyQstandardItem = self.get_qs_by_qm(qm)
-
-        attributes_count = qs.rowCount()
+    def attribute_delete_action(self, qs_parent: MyQstandardItem, number: str):
 
         if number == attribute_val_default_layer_first:
-            numbers_list = list(attribute_val_default_layer)
-            attribute_type = type_layer
-            attribute_val_first = attribute_val_default_layer_first
-            attribute_val_last = attribute_val_default_layer_last
+            number = self.tr("Groupe Layer")
+            number_list = attribute_val_default_layer
 
-        elif number == attribute_val_default_fill_first:
-            numbers_list = list(attribute_val_default_fill)
-            attribute_type = type_fill
-            attribute_val_first = attribute_val_default_fill_first
-            attribute_val_last = attribute_val_default_fill_last
+        elif number == attribute_val_default_layer_first:
+            number = self.tr("Groupe Remplissage")
+            number_list = attribute_val_default_layer
 
-        elif number == attribute_val_default_room_first:
-            numbers_list = list(attribute_val_default_room)
-            attribute_type = type_room
-            attribute_val_first = attribute_val_default_room_first
-            attribute_val_last = attribute_val_default_room_last
-
-        # elif number == attribute_val_default_ht_first:
-        #     numbers_list = list(attribute_val_default_ht)
-        #     attribute_type = type_ht
-        #     attribute_val_first = attribute_val_default_ht_first
-        #     attribute_val_last = attribute_val_default_ht_last
+        elif number == attribute_val_default_layer_first:
+            number = self.tr("Groupe Pièce")
+            number_list = attribute_val_default_layer
 
         else:
-            numbers_list = [number]
-            attribute_type = ""
-            attribute_val_first = ""
-            attribute_val_last = ""
+            number_list = [number]
+            number = f"@{number}@"
 
-        dict_comp = dict()
-        index_sup_list = list()
-        current_row_s = -1
-        liste_ele_s = list()
+        attribute_data = list()
 
-        for attribute_index in range(attributes_count):
+        for number in number_list:
 
-            qs_val: MyQstandardItem = qs.child(attribute_index, col_cat_value)
-            qs_number: MyQstandardItem = qs.child(attribute_index, col_cat_number)
+            qs_list = qs_parent.get_attribute_line_by_number(number=number)
 
-            if qs_val is None or qs_number is None:
-                continue
+            if not isinstance(qs_list, list):
+                print("catalog_manage -- attribute_delete -- not isinstance(qs_list, list)")
+                break
 
-            if not isinstance(qs_val, Attribute):
-                return
+            if len(qs_list) != col_cat_count:
+                print("catalog_manage -- attribute_delete -- len(qs_list) != col_cat_count")
+                break
 
-            current_number: str = qs_number.text()
+            qs_value = qs_list[col_cat_value]
 
-            if current_number == "207":
-                continue
+            if not isinstance(qs_value, Attribute):
+                print("catalog_manage -- attribute_delete -- not isinstance(qs_value, Attribute)")
+                break
 
-            if current_number not in numbers_list:
-                continue
+            row_current = qs_value.row()
 
-            current_row = qs_number.row()
+            qs_list = qs_parent.takeRow(row_current)
 
-            # ---------------------------------------
-            # Gestion suppression attribut non spécial
-            # ---------------------------------------
+            if not isinstance(qs_list, list):
+                print("catalog_manage -- attribute_delete -- not isinstance(qs_list, list)")
+                break
 
-            if attribute_type == "":
+            if len(qs_list) != col_cat_count:
+                print("catalog_manage -- attribute_delete -- len(qs_list) != col_cat_count")
+                break
 
-                liste_ele = qs.takeRow(current_row)
+            attribute_data.append(AttributeData(guid_current=qs_value.data(user_guid),
+                                                row_current=row_current,
+                                                qs_list=qs_list))
 
-                self.undo_del_attribute(qs_parent=qs,
-                                        index_attribut=current_row,
-                                        liste_ele=liste_ele,
-                                        dict_comp=dict(),
-                                        type_attribut="")
-                if detail_row == -1:
-                    self.change_made = True
-                    return
+        self.history_del_attribute(guid_parent=qs_parent.data(user_guid),
+                                   attribute_data=attribute_data,
+                                   parent_name=qs_parent.text(),
+                                   number=number)
 
-                self.ui.attributes_detail.takeItem(detail_row)
-                self.change_made = True
-                return
+    def attribute_delete_unknown(self):
 
-            # ---------------------------------------
-            # Gestion suppression attribut spécial
-            # ---------------------------------------
+        search_start = self.hierarchy.cat_model.index(0, 0)
 
-            if current_number == attribute_val_first:
+        search = self.hierarchy.cat_model.match(search_start, user_unknown, type_unknown, -1, Qt.MatchRecursive)
 
-                current_row_s = current_row
-                liste_ele_s: list = [qs.child(attribute_index, index_colonne)
-                                     for index_colonne in range(qs.columnCount())]
-
-            else:
-
-                dict_comp[current_row] = [qs.child(attribute_index, index_colonne)
-                                          for index_colonne in range(qs.columnCount())]
-
-            index_sup_list.append(current_row)
-
-            if current_number != attribute_val_last:
-                continue
-
-            self.undo_del_attribute(qs_parent=qs,
-                                    index_attribut=current_row_s,
-                                    liste_ele=liste_ele_s,
-                                    dict_comp=dict_comp,
-                                    type_attribut=attribute_type)
-            break
-
-        index_sup_list.sort(key=int, reverse=True)
-
-        # Suppression attribut
-        for index_sup in index_sup_list:
-            qs.takeRow(index_sup)
-
-        if detail_row == -1:
-            self.change_made = True
+        if len(search) == 0:
+            print("catalog_manage -- attribute_delete_unknown -- len(search) == 0")
             return
 
-        self.ui.attributes_detail.takeItem(detail_row)
-        self.change_made = True
+        for qm in search:
+
+            if not qm_check(qm):
+                print("catalog_manage -- attribute_delete_unknown -- not qm_check(qm)")
+                continue
+
+            # ------ Parent
+
+            qs_parent = self.hierarchy.get_qs_by_qm(qm=qm.parent())
+
+            if not isinstance(qs_parent, (Material, Component)):
+                print("catalog_manage -- attribute_delete_unknown -- not isinstance(qs_parent, (Material, Component))")
+                continue
+
+            # ------ Number
+
+            row_current = qm.row()
+
+            qs_number = qs_parent.child(row_current, col_cat_number)
+
+            if not isinstance(qs_number, Info):
+                print("catalog_manage -- attribute_delete_unknown -- not isinstance(qs_number, Info)")
+                continue
+
+            number = qs_number.text()
+
+            if not isinstance(number, str):
+                print("catalog_manage -- attribute_delete_unknown -- not isinstance(number, str)")
+                continue
+
+            # ------ Delete
+
+            self.attribute_delete_action(qs_parent=qs_parent, number=number)
+
         return
-
-    def attribute_delete_check(self):
-        """Permet d'autoriser ou refuser la suppression d'un attribut protéger (Nom ou Code)"""
-
-        selection_list = self.ui.attributes_detail.selectedItems()
-
-        if len(selection_list) == 0:
-            return False, False
-
-        selection_list.sort(key=lambda v: self.ui.attributes_detail.row(v), reverse=True)
-
-        for qlistwidgetitem in selection_list:
-
-            qlistwidgetitem: QListWidgetItem
-
-            widget_type = qlistwidgetitem.data(user_data_number)
-
-            if widget_type == attribute_default_base or widget_type == type_nom:
-                return False, False
-
-            if widget_type == "207":
-                return len(selection_list) != 1, True
-
-        return True, True
 
     @staticmethod
     def a___________________attributes_copy______():
@@ -3726,7 +3679,7 @@ class CatalogDatas(QObject):
         if len(selection_list) == 0:
             return
 
-        qs_selection_list = self.get_qs_selection_list()
+        qs_selection_list = self.hierarchy.get_qs_selection_list()
 
         if len(qs_selection_list) == 0:
             return
@@ -3748,7 +3701,7 @@ class CatalogDatas(QObject):
             qlistwidgetitem: QListWidgetItem
 
             widget_type = qlistwidgetitem.data(user_data_type)
-            number = qlistwidgetitem.data(user_data_number)
+            number_str = qlistwidgetitem.data(user_data_number)
 
             if widget_type == type_nom or widget_type == type_code or \
                     widget_type == type_lien:
@@ -3759,9 +3712,9 @@ class CatalogDatas(QObject):
                 temp_list = list()
                 cut_list = list()
 
-                for number in attribute_val_default_layer:
+                for number_str in attribute_val_default_layer:
 
-                    qs_list: list = self.attribute_copy_action(first_qs, number)
+                    qs_list: list = self.attribute_copy_action(qs=first_qs, number=number_str)
 
                     if qs_list is None:
                         temp_list = list()
@@ -3794,9 +3747,9 @@ class CatalogDatas(QObject):
                 temp_list = list()
                 cut_list = list()
 
-                for number in attribute_val_default_fill:
+                for number_str in attribute_val_default_fill:
 
-                    qs_list: list = self.attribute_copy_action(first_qs, number)
+                    qs_list: list = self.attribute_copy_action(qs=first_qs, number=number_str)
 
                     if qs_list is None:
                         temp_list = list()
@@ -3829,9 +3782,9 @@ class CatalogDatas(QObject):
                 temp_list = list()
                 cut_list = list()
 
-                for number in attribute_val_default_room:
+                for number_str in attribute_val_default_room:
 
-                    qs_list: list = self.attribute_copy_action(first_qs, number)
+                    qs_list: list = self.attribute_copy_action(qs=first_qs, number=number_str)
 
                     if qs_list is None:
                         temp_list = list()
@@ -3858,27 +3811,30 @@ class CatalogDatas(QObject):
                                          value=[first_qs, qs_value_list])
                 continue
 
-            qs_list: list = self.attribute_copy_action(first_qs, number)
+            qs_list: list = self.attribute_copy_action(qs=first_qs, number=number_str)
 
             if qs_list is None:
                 continue
 
-            attribute_name = self.allplan.find_datas_by_number(number, code_attr_name)
+            attribute_obj = self.allplan.attributes_dict.get(number_str)
+
+            if not isinstance(attribute_obj, AttributeDatas):
+                continue
 
             qs_value: MyQstandardItem = qs_list[0]
             value = qs_value.text()
 
-            clipboard.append(key=f"{number} -- {attribute_name} -- {value}",
+            clipboard.append(key=f"{number_str} -- {attribute_obj.name} -- {value}",
                              value=qs_list)
 
             if cut:
 
-                qs_value_list = self.attribute_get_original(qs_parent=first_qs, numbers_list=[number])
+                qs_value_list = self.attribute_get_original(qs_parent=first_qs, numbers_list=[number_str])
 
                 if len(qs_value_list) != 1:
                     continue
 
-                clipboard_cut.append(key=f"{number} -- {attribute_name} -- {value}",
+                clipboard_cut.append(key=f"{number_str} -- {attribute_obj.name} -- {value}",
                                      value=[first_qs, qs_value_list[0]])
 
         self.asc.boutons_hierarchie_coller(attribute_code)
@@ -3893,9 +3849,9 @@ class CatalogDatas(QObject):
 
         for number in numbers_list:
 
-            qs_original_list = qs_parent.get_attribute_line_by_number(number=number)
+            qs_original_list: list = qs_parent.get_attribute_line_by_number(number=number)
 
-            if len(qs_original_list) != qs_parent.columnCount():
+            if len(qs_original_list) != col_cat_count:
                 return list()
 
             qs_value_original = qs_original_list[col_cat_value]
@@ -3931,6 +3887,35 @@ class CatalogDatas(QObject):
 
         return final_list
 
+    def get_attribute_number_selection_list(self) -> list:
+
+        number_list = set()
+
+        selection_list = self.ui.attributes_detail.selectedItems()
+
+        if len(selection_list) == 0:
+            return number_list
+
+        for qlistwidgetitem in selection_list:
+
+            if not isinstance(qlistwidgetitem, QListWidgetItem):
+                continue
+
+            number = qlistwidgetitem.data(user_data_number)
+
+            if not isinstance(number, str):
+                print("catalog_manage -- get_attribute_number_selection_list -- not isinstance(number, str)")
+
+            if number == "Lien":
+                continue
+
+            if number in number_list:
+                continue
+
+            number_list.add(number)
+
+        return number_list
+
     @staticmethod
     def attribute_copy_action(qs: MyQstandardItem, number: str):
 
@@ -3943,7 +3928,7 @@ class CatalogDatas(QObject):
             qs_value: MyQstandardItem = qs.child(attribute_index, col_cat_value)
             qs_number: MyQstandardItem = qs.child(attribute_index, col_cat_number)
 
-            if not isinstance(qs_value, Attribute):
+            if not isinstance(qs_value, Attribute) or not isinstance(qs_number, Info):
                 return qs_list
 
             current_number: str = qs_number.text()
@@ -3951,13 +3936,13 @@ class CatalogDatas(QObject):
             if current_number != number:
                 continue
 
-            for column_index in range(qs.columnCount()):
+            for column_index in range(col_cat_count):
                 qs_copy: MyQstandardItem = qs.child(attribute_index, column_index)
 
                 if qs_copy is None:
                     return qs_list
 
-                qs_list.append(qs_copy.clone_creation())
+                qs_list.append(qs_copy.clone_creation(new=False))
 
             return qs_list
 
@@ -3968,413 +3953,779 @@ class CatalogDatas(QObject):
         pass
 
     def attribute_paste(self, title="", id_ele="0") -> bool:
-
-        cut = self.clipboard_attribute_cut.len_datas() != 0
-
-        result = self.attribute_paste_action(clipboard_attribute=self.clipboard_attribute,
-                                             title=title, id_ele=id_ele)
-
-        if not cut:
-            return result
-
-        if not result:
-            return False
-
-        self.attribute_couper_coller_action()
-        return True
+        return self.attribute_paste_action(clipboard_attribute=self.clipboard_attribute, title=title, id_ele=id_ele)
 
     def attribute_paste_action(self, clipboard_attribute: ClipboardDatas, title="", id_ele="0") -> bool:
 
-        columns_count: int = self.cat_model.columnCount()
+        qs_selection_list: list = self.hierarchy.get_qs_selection_list()
 
-        liste_hierarchie_qs_selection: list = self.get_qs_selection_list()
-        nb_qstandarditem: int = len(liste_hierarchie_qs_selection)
+        if not isinstance(qs_selection_list, list):
+            print("catalog_manage -- attribute_paste_action -- not isinstance(qs_selection, list)")
+            return False
 
-        attributs_copier = dict()
+        # ----------------
+
+        selection_count = len(qs_selection_list)
+
+        if selection_count == 0:
+            return False
+
+        # ----------------
+
+        attribute_copy = dict()
 
         if title == "":
 
-            for titre_actuel in clipboard_attribute.keys():
+            for title in clipboard_attribute.keys():
                 self.attributs_coller_datas(clipboard_attribute=clipboard_attribute,
-                                            titre_actuel=titre_actuel,
-                                            attributs_copier=attributs_copier,
+                                            titre_actuel=title,
+                                            attributs_copier=attribute_copy,
                                             id_ele=id_ele)
 
         elif title in clipboard_attribute.keys():
             self.attributs_coller_datas(clipboard_attribute=clipboard_attribute,
                                         titre_actuel=title,
-                                        attributs_copier=attributs_copier,
+                                        attributs_copier=attribute_copy,
                                         id_ele=id_ele)
 
-        else:
-            print("onglet_hierarchie -- attributs_coller_action --> nb_items_copier = 0")
+        # ----------------
+
+        attribut_copy_count: int = len(attribute_copy)
+
+        if attribut_copy_count == 0:
+            print("catalog_manage -- attribute_paste_action -- attribut_copy_count == 0")
             return False
 
-        nb_items_copier: int = len(attributs_copier)
-
         # ------------------------------------------------------------------------
-        # Vérification si la sélection de la hiérarchie est une simple ou étendue
+        # Check if single selection or extend selection
         # ------------------------------------------------------------------------
-        if nb_qstandarditem == 0:
-            return False
 
-        if nb_qstandarditem > 1:
+        if selection_count > 1:
 
-            if nb_items_copier == 1:
+            self.clipboard_attribute_cut.clear()
 
-                for liste_datas in attributs_copier.items():
+            if attribut_copy_count == 1:
 
-                    liste_datas: tuple
+                for attribute_data in attribute_copy.items():
 
-                    if len(liste_datas) != 2:
-                        continue
+                    if not isinstance(attribute_data, tuple):
+                        print("catalog_manage -- attribute_paste_action -- not isinstance(attribute_data, tuple)")
+                        return False
 
-                    liste_qs_copier = liste_datas[1]
+                    if len(attribute_data) != 2:
+                        print("catalog_manage -- attribute_paste_action -- len(attribute_data) != 2")
+                        return False
 
-                    # liste_datas = ( numero, [qstandarditem col0, qstandarditem col1, ...])
+                    qs_copied_list = attribute_data[1]
 
-                    if len(liste_qs_copier) != columns_count:
-                        continue
+                    # qs_copied_list = ( number, [qstandarditem col0, qstandarditem col1, ...])
 
-                    question = msg(titre=application_title,
-                                   message=self.tr("Voulez-vous vraiment coller l'attribut dans "
-                                                   "les éléments selectionnés?"),
-                                   type_bouton=QMessageBox.Ok | QMessageBox.No,
-                                   defaut_bouton=QMessageBox.Ok,
-                                   icone_avertissement=True)
+                    if len(qs_copied_list) != col_cat_count:
+                        print("catalog_manage -- attribute_paste_action -- len(qs_copied_list) != col_cat_count")
+                        return False
 
-                    if question == QMessageBox.No or question == QMessageBox.Cancel:
+                    result = msg(titre=application_title,
+                                 message=self.tr("Voulez-vous vraiment coller l'attribut dans "
+                                                 "les éléments selectionnés?"),
+                                 type_bouton=QMessageBox.Ok | QMessageBox.No,
+                                 defaut_bouton=QMessageBox.Ok,
+                                 icone_avertissement=True)
+
+                    if result == QMessageBox.No or result == QMessageBox.Cancel:
                         return False
 
             else:
 
-                question = msg(titre=application_title,
-                               message=self.tr("Voulez-vous vraiment coller les attributs "
-                                               "dans les éléments selectionnés?"),
-                               type_bouton=QMessageBox.Ok | QMessageBox.No,
-                               defaut_bouton=QMessageBox.Ok,
-                               icone_avertissement=True)
+                result = msg(titre=application_title,
+                             message=self.tr("Voulez-vous vraiment coller les attributs "
+                                             "dans les éléments selectionnés?"),
+                             type_bouton=QMessageBox.Ok | QMessageBox.No,
+                             defaut_bouton=QMessageBox.Ok,
+                             icone_avertissement=True)
 
-                if question == QMessageBox.No or question == QMessageBox.Cancel:
+                if result == QMessageBox.No or result == QMessageBox.Cancel:
                     return False
 
         # ------------------------------------------------------------------------
-        # rechercher si des attributs sont déjà existants dans la sélection
+        # search if some attributes exist in the selection (if not cut)
         # ------------------------------------------------------------------------
 
-        maj_attribut = True
-        liste_attributs_existants = list()
+        cut = self.clipboard_attribute_cut.len_datas() != 0
 
-        premier: MyQstandardItem = liste_hierarchie_qs_selection[0]
+        # ----------------
 
-        for qstandarditem in liste_hierarchie_qs_selection:
+        attribute_update = True
+        attribute_exist_list = list()
 
-            if qstandarditem is None:
-                print("onglet_hierarchie -- attributs_coller_action --> qstandarditem is None")
-                continue
+        for qs_parent_select in qs_selection_list:
 
-            qstandarditem: MyQstandardItem
-            current_colone = qstandarditem.column()
+            if not isinstance(qs_parent_select, (Folder, Material, Component)):
+                print("catalog_manage -- attribute_paste_action -- not isinstance(qs_parent, (Folder)")
+                return False
 
-            if current_colone != col_cat_value:
-                continue
+            number_list = qs_parent_select.get_attribute_numbers_list()
 
-            liste_numeros = qstandarditem.get_attribute_numbers_list()
+            for number_current in number_list:
 
-            for number in liste_numeros:
-
-                if number == attribute_default_base:
+                if number_current == attribute_default_base:
                     continue
 
-                if number in attribute_val_default_layer:
-                    number = attribute_val_default_layer_first
+                if number_current in attribute_val_default_layer:
+                    number_current = attribute_val_default_layer_first
 
-                elif number in attribute_val_default_fill:
-                    number = attribute_val_default_fill_first
+                elif number_current in attribute_val_default_fill:
+                    number_current = attribute_val_default_fill_first
 
-                elif number in attribute_val_default_room:
-                    number = attribute_val_default_room_first
+                elif number_current in attribute_val_default_room:
+                    number_current = attribute_val_default_room_first
 
-                # elif number in attribute_val_default_ht:
-                #     number = "112"
-
-                if number not in attributs_copier:
+                if number_current not in attribute_copy:
                     continue
 
-                if number not in liste_attributs_existants:
-                    liste_attributs_existants.append(number)
+                if number_current not in attribute_exist_list:
+                    attribute_exist_list.append(number_current)
 
-        if not isinstance(premier, Folder):
+            # ----------------
 
-            b = self.tr("existe déjà, voulez-vous le mettre à jour?")
+            qs_first = qs_selection_list[0]
 
-            if len(liste_attributs_existants) != 0:
+            if not isinstance(qs_first, Folder):
 
-                title = liste_attributs_existants[0]
+                message = self.tr("existe déjà, voulez-vous le mettre à jour?")
 
-                question = msg(titre=application_title,
-                               message=f"{title} {b}",
-                               type_bouton=QMessageBox.Ok | QMessageBox.No | QMessageBox.Cancel,
-                               defaut_bouton=QMessageBox.Ok,
-                               infos="attributes_update",
-                               bt_ok=self.tr("Mettre à jour"),
-                               bt_no=self.tr("Ignorer"),
-                               icone_question=True)
+                if len(attribute_exist_list) != 0:
 
-                if question == QMessageBox.Cancel:
-                    return False
+                    title = attribute_exist_list[0]
 
-                if question == QMessageBox.No:
-                    maj_attribut = False
+                    result = msg(titre=application_title,
+                                 message=f"{title} {message}",
+                                 type_bouton=QMessageBox.Ok | QMessageBox.No | QMessageBox.Cancel,
+                                 defaut_bouton=QMessageBox.Ok,
+                                 infos="attributes_update",
+                                 bt_ok=self.tr("Mettre à jour"),
+                                 bt_no=self.tr("Ignorer"),
+                                 icone_question=True)
+
+                    if result == QMessageBox.Cancel:
+                        return False
+
+                    if result == QMessageBox.No:
+                        attribute_update = False
 
         # ------------------------------------------------------------------------
-        # rechercher si des attributs sont déjà existants dans la sélection
+        # Cut Datas attribute
         # ------------------------------------------------------------------------
 
-        for qstandarditem in liste_hierarchie_qs_selection:
+        if cut:
 
-            if qstandarditem is None:
-                print("onglet_hierarchie -- attributs_coller_action --> qstandarditem is None")
-                continue
+            result = self.attribute_get_cut_datas()
 
-            qstandarditem: MyQstandardItem
-            current_colone = qstandarditem.column()
+            if not isinstance(result, tuple):
+                print("catalog_manage -- attribute_paste_action -- not isinstance(result, tuple)")
+                return False
 
-            if current_colone != col_cat_value:
-                continue
+            if len(result) != 2:
+                print("catalog_manage -- attribute_paste_action -- not isinstance(result, tuple)")
+                return False
 
-            if isinstance(qstandarditem, Link):
-                continue
+            # ----------------
 
-            liste_attributs = qstandarditem.get_attribute_numbers_list()
+            qs_parent_original, attribute_original_dict = result
 
-            dict_comp_l = dict()
-            dict_comp_ml = dict()
+            if not isinstance(qs_parent_original, MyQstandardItem) or not isinstance(attribute_original_dict, dict):
+                print(
+                    "catalog_manage -- attribute_paste_action -- "
+                    "not isinstance(qs_parent_original, MyQstandardItem)")
+                return False
 
-            dict_comp_r = dict()
-            dict_comp_mr = dict()
+            if len(attribute_original_dict) == 0:
+                print("catalog_manage -- attribute_paste_action -- len(attribute_original_dict) == 0")
+                return False
 
-            dict_comp_p = dict()
-            dict_comp_mp = dict()
+            # ----------------
 
-            # dict_comp_h = dict()
-            # dict_comp_mh = dict()
+            guid_parent_original = qs_parent_original.data(user_guid)
 
-            for number in attributs_copier:
+            if not isinstance(guid_parent_original, str):
+                print("catalog_manage -- attribute_paste_action -- not isinstance(guid_parent_original, str)")
+                return False
 
-                if number == "207":
-                    self.attributs_update_description(qstandarditem, attributs_copier[number])
+            # ----------------
 
-                # ----------------------------------
-                #  Mise à jour
-                # ----------------------------------
+            parent_name_original = qs_parent_original.text()
 
-                if number in liste_attributs and maj_attribut:
+            if not isinstance(parent_name_original, str):
+                print("catalog_manage -- attribute_paste_action -- not isinstance(parent_name_original, str)")
+                return False
 
-                    line_list = qstandarditem.get_attribute_line_by_number(number)
+            # ----------------
 
-                    if len(line_list) != self.cat_model.columnCount():
-                        print("catalog_manage -- attributs_paste --> len(line_list) != self.cat_model.columnCount()")
-                        continue
+        else:
+            qs_parent_original = MyQstandardItem()
+            attribute_original_dict = dict()
+            guid_parent_original = ""
+            parent_name_original = ""
 
-                    qs_value, qs_index = line_list[col_cat_value], line_list[col_cat_index]
+        # ------------------------------------------------------------------------
+        # Copy
+        # ------------------------------------------------------------------------
 
-                    if not isinstance(qs_value, Attribute) or not isinstance(qs_index, Attribute):
-                        print("catalog_manage -- attributs_paste --> "
-                              "not isinstance(qs_value, Attribute) or not isinstance(qs_index, Attribute)")
-                        continue
+        for qs_parent_select in qs_selection_list:
 
-                    val1 = qs_value.text()
-                    index1 = qs_index.text()
+            if not isinstance(qs_parent_select, MyQstandardItem):
+                print("catalog_manage -- attribute_paste_action -- not isinstance(qs_parent_select, MyQstandardItem)")
+                return False
 
-                    qs_value_copy: MyQstandardItem = attributs_copier[number][col_cat_value]
-                    qs_index_copy: MyQstandardItem = attributs_copier[number][col_cat_index]
+            guid_parent_select = qs_parent_select.data(user_guid)
 
-                    if not isinstance(qs_value_copy, Attribute) or not isinstance(qs_index_copy, Attribute):
-                        print("catalog_manage -- attributs_paste --> "
-                              "not isinstance(qs_value_copy, Attribute) or not isinstance(qs_index_copy, Attribute)")
-                        continue
+            number_list = qs_parent_select.get_attribute_numbers_list()
 
-                    val2 = qs_value_copy.text()
-                    index2 = qs_index_copy.text()
+            attribute_data_layer = list()
+            attribute_data_fill = list()
+            attribute_data_room = list()
 
-                    print(f"{val1} ({qs_value.text()}) --> {val2} ({qs_index_copy.text()})")
+            value_dict_layer = dict()
+            value_dict_fill = dict()
+            value_dict_room = dict()
 
-                    qs_value.setText(val2)
-                    qs_index.setText(index2)
+            for number_current in attribute_copy:
 
-                    self.change_made = True
+                if not cut:
 
-                    if number in attribute_val_default_layer:
+                    # ----------------------------------
+                    #  Update attribute -> if attribute exists and attribute update
+                    # ----------------------------------
 
-                        dict_comp_ml[number] = {"numero": number,
-                                                "valeur_originale": val1,
-                                                "nouveau_texte": val2,
-                                                "ancien_index": index1,
-                                                "nouvel_index": index2,
-                                                "qs_value": qs_value}
+                    if number_current in number_list and attribute_update:
 
-                        if number != attribute_val_default_layer_last:
+                        qs_select_list = qs_parent_select.get_attribute_line_by_number(number_current)
+
+                        if len(qs_select_list) != col_cat_count:
+                            print("catalog_manage -- attribute_paste_action -- "
+                                  "len(qs_select_list) != col_cat_count")
+                            return False
+
+                        # ----------------
+
+                        qs_value_select, qs_index_select = qs_select_list[col_cat_value], qs_select_list[col_cat_index]
+
+                        if not isinstance(qs_value_select, Attribute) or not isinstance(qs_index_select, Info):
+                            print("catalog_manage -- attribute_paste_action -- "
+                                  "not isinstance(qs_value_select, Attribute)")
+                            return False
+
+                        # ----------------
+
+                        value_select = qs_value_select.text()
+                        value_index_select = qs_index_select.text()
+
+                        # ----------------
+
+                        qs_value_original = attribute_copy[number_current][col_cat_value]
+                        qs_index_original = attribute_copy[number_current][col_cat_index]
+
+                        if not isinstance(qs_value_original, Attribute) or not isinstance(qs_index_original, Info):
+                            print("catalog_manage -- attribute_paste_action -- "
+                                  "not isinstance(qs_value_original, Attribute)")
+                            return False
+
+                        # ----------------
+
+                        value_original = qs_value_original.text()
+                        value_index_original = qs_index_original.text()
+
+                        # ----------------
+
+                        # print(f"{value_current} ({value_current}) --> {value_new} ({value_index_new})")
+
+                        # ----------------
+
+                        qs_value_select.setText(value_original)
+                        qs_index_select.setText(value_index_original)
+
+                        # ----------------
+
+                        self.change_made = True
+
+                        # ---------------- History -----
+
+                        if number_current in attribute_val_default_layer:
+
+                            data = AttributeModifyData(number_current=number_current,
+                                                       value_new=value_select,
+                                                       value_index_new=value_index_select)
+
+                            attribute_data_layer.append(data)
+
+                            # -------------------
+
+                            value_dict_layer[number_current] = [value_select, value_original]
+
+                            # -------------------
+
+                            if number_current != attribute_val_default_layer_last:
+                                continue
+
+                            self.history_modify_attribute(guid_parent=guid_parent_select,
+                                                          attribute_data=attribute_data_layer,
+                                                          parent_name=qs_parent_select.text(),
+                                                          value_dict=value_dict_layer,
+                                                          attribute_type=self.tr("Groupe Layer"))
                             continue
 
-                        val1 = dict_comp_ml[attribute_val_default_layer_first]["valeur_originale"]
-                        val2 = dict_comp_ml[attribute_val_default_layer_first]["nouveau_texte"]
-                        ancien_index = dict_comp_ml[attribute_val_default_layer_first]["ancien_index"]
-                        nouvel_index = dict_comp_ml[attribute_val_default_layer_first]["nouvel_index"]
-                        qs_value = dict_comp_ml[attribute_val_default_layer_first]["qs_value"]
+                        if number_current in attribute_val_default_fill:
 
-                        dict_comp_ml.pop(attribute_val_default_layer_first)
+                            data = AttributeModifyData(number_current=number_current,
+                                                       value_new=value_select,
+                                                       value_index_new=value_index_select)
 
-                        self.undo_modify_attribute(qs_actuel=qs_value,
-                                                   numero=attribute_val_default_layer_first,
-                                                   ancienne_valeur=val1,
-                                                   nouvelle_valeur=val2,
-                                                   ancien_index=ancien_index,
-                                                   nouvel_index=nouvel_index,
-                                                   dict_comp=dict_comp_ml,
-                                                   type_attribut=self.tr("Groupe Layer"))
+                            attribute_data_fill.append(data)
 
-                        continue
+                            # -------------------
 
-                    if number in attribute_val_default_fill:
+                            value_dict_fill[number_current] = [value_select, value_original]
 
-                        dict_comp_mr[number] = {"numero": number,
-                                                "valeur_originale": val1,
-                                                "nouveau_texte": val2,
-                                                "ancien_index": index1,
-                                                "nouvel_index": index2,
-                                                "qs_value": qs_value}
+                            # -------------------
 
-                        if number != attribute_val_default_fill_last:
+                            if number_current != attribute_val_default_fill_last:
+                                continue
+
+                            self.history_modify_attribute(guid_parent=guid_parent_select,
+                                                          attribute_data=attribute_data_fill,
+                                                          parent_name=qs_parent_select.text(),
+                                                          value_dict=value_dict_fill,
+                                                          attribute_type=self.tr("Groupe Remplissage"))
+
                             continue
 
-                        val1 = dict_comp_mr[attribute_val_default_fill_first]["valeur_originale"]
-                        val2 = dict_comp_mr[attribute_val_default_fill_first]["nouveau_texte"]
-                        ancien_index = dict_comp_mr[attribute_val_default_fill_first]["ancien_index"]
-                        nouvel_index = dict_comp_mr[attribute_val_default_fill_first]["nouvel_index"]
-                        qs_value = dict_comp_ml[attribute_val_default_layer_first]["qs_value"]
+                        if number_current in attribute_val_default_room:
 
-                        dict_comp_mr.pop(attribute_val_default_fill_first)
+                            data = AttributeModifyData(number_current=number_current,
+                                                       value_new=value_select,
+                                                       value_index_new=value_index_select)
 
-                        self.undo_modify_attribute(qs_actuel=qs_value,
-                                                   numero=attribute_val_default_fill_first,
-                                                   ancienne_valeur=val1,
-                                                   nouvelle_valeur=val2,
-                                                   ancien_index=ancien_index,
-                                                   nouvel_index=nouvel_index,
-                                                   dict_comp=dict_comp_mr,
-                                                   type_attribut=self.tr("Groupe Remplissage"))
+                            attribute_data_room.append(data)
 
-                        continue
+                            # -------------------
 
-                    if number in attribute_val_default_room:
+                            value_dict_layer[number_current] = [value_select, value_original]
 
-                        dict_comp_mp[number] = {"numero": number,
-                                                "valeur_originale": val1,
-                                                "nouveau_texte": val2,
-                                                "ancien_index": index1,
-                                                "nouvel_index": index2,
-                                                "qs_value": qs_value}
+                            # -------------------
 
-                        if number != attribute_val_default_room_last:
+                            if number_current != attribute_val_default_room_last:
+                                continue
+
+                            self.history_modify_attribute(guid_parent=guid_parent_select,
+                                                          attribute_data=attribute_data_room,
+                                                          parent_name=qs_parent_select.text(),
+                                                          value_dict=value_dict_room,
+                                                          attribute_type=self.tr("Groupe Pièce"))
+
                             continue
 
-                        val1 = dict_comp_mp[attribute_val_default_room_first]["valeur_originale"]
-                        val2 = dict_comp_mp[attribute_val_default_room_first]["nouveau_texte"]
-                        ancien_index = dict_comp_mp[attribute_val_default_room_first]["ancien_index"]
-                        nouvel_index = dict_comp_mp[attribute_val_default_room_first]["nouvel_index"]
-                        qs_value = dict_comp_ml[attribute_val_default_layer_first]["qs_value"]
+                        data = AttributeModifyData(number_current=number_current,
+                                                   value_new=value_select,
+                                                   value_index_new=value_index_select)
 
-                        dict_comp_mp.pop(attribute_val_default_room_first)
+                        # -------------------
 
-                        self.undo_modify_attribute(qs_actuel=qs_value,
-                                                   numero=attribute_val_default_room_first,
-                                                   ancienne_valeur=val1,
-                                                   nouvelle_valeur=val2,
-                                                   ancien_index=ancien_index,
-                                                   nouvel_index=nouvel_index,
-                                                   dict_comp=dict_comp_mp,
-                                                   type_attribut=self.tr("Groupe Pièce"))
+                        self.history_modify_attribute(guid_parent=guid_parent_select,
+                                                      attribute_data=[data],
+                                                      parent_name=qs_parent_select.text(),
+                                                      value_dict={number_current: [value_select, value_original]})
+
+                        # ----------------
+
+                        if number_current == "207":
+                            self.attributs_update_description(qs_current=qs_parent_select,
+                                                              value_new=value_select)
 
                         continue
 
-                    self.undo_modify_attribute(qs_actuel=qs_value,
-                                               numero=number,
-                                               ancienne_valeur=val1,
-                                               nouvelle_valeur=val2,
-                                               ancien_index=index1,
-                                               nouvel_index=index2,
-                                               dict_comp=dict(),
-                                               type_attribut="")
+                    # ----------------------------------
+                    #  Creation if attribute not exists
+                    # ----------------------------------
 
-                    continue
+                    if number_current not in number_list:
 
-                # ----------------------------------
-                #  Creation
-                # ----------------------------------
+                        index_insertion = qs_parent_select.get_attribute_insertion_index(number=number_current)
 
-                elif number not in liste_attributs:
+                        qs_list_new = list()
+                        qs_list_current: list = attribute_copy[number_current]
 
-                    index_insertion = qstandarditem.get_attribute_insertion_index(number=number)
+                        for qs_current_column in qs_list_current:
 
-                    liste_insertion = list()
-                    liste_actuelle: list = attributs_copier[number]
+                            if not isinstance(qs_current_column, MyQstandardItem):
+                                print("catalog_manage -- attribute_paste_action -- "
+                                      "not isinstance(qs_current_column, MyQstandardItem)")
+                                return False
 
-                    for qstandarditem_temp in liste_actuelle:
+                            qs_cloned = qs_current_column.clone_creation(new=True)
 
-                        if not isinstance(qstandarditem_temp, MyQstandardItem):
+                            if qs_current_column.column() == col_cat_value:
+                                qs_current_column.clone_children(qs_original=qs_current_column,
+                                                                 qs_destination=qs_cloned,
+                                                                 new=True)
+
+                            qs_list_new.append(qs_cloned)
+
+                        # ----------------
+
+                        if len(qs_list_new) != col_cat_count:
+                            print("catalog_manage -- attribute_paste_action -- len(qs_list_new) != col_cat_count")
+                            return False
+
+                        # ----------------
+
+                        qs_parent_select.insertRow(index_insertion, qs_list_new)
+
+                        # ----------------
+
+                        self.change_made = True
+
+                        # ----------------
+
+                        qs_value_new = qs_list_new[col_cat_value]
+
+                        if not isinstance(qs_value_new, Attribute):
+                            print("catalog_manage -- attribute_paste_action -- not isinstance(qs_value_new, Attribute)")
+                            return False
+
+                        guid_current = qs_value_new.data(user_guid)
+
+                        # ---------------- History -----
+
+                        if number_current in attribute_val_default_layer:
+
+                            attribute_data_layer.append(AttributeData(guid_current=guid_current,
+                                                                      row_current=index_insertion,
+                                                                      qs_list=qs_list_new))
+
+                            if number_current == attribute_val_default_layer_last:
+                                self.history_add_attribute(guid_parent=qs_parent_select.data(user_guid),
+                                                           attribute_data=attribute_data_layer,
+                                                           parent_name=qs_parent_select.text(),
+                                                           number=self.tr("Groupe Layer"))
+
                             continue
 
-                        qstandarditem_nouveau = qstandarditem_temp.clone_creation()
+                        # -------------------
 
-                        if qstandarditem_temp.column() == col_cat_value:
-                            qstandarditem_temp.clone_children(qs_original=qstandarditem_temp,
-                                                              qs_destination=qstandarditem_nouveau)
+                        if number_current in attribute_val_default_fill:
 
-                        liste_insertion.append(qstandarditem_nouveau)
+                            attribute_data_fill.append(AttributeData(guid_current=guid_current,
+                                                                     row_current=index_insertion,
+                                                                     qs_list=qs_list_new))
 
-                    qstandarditem.insertRow(index_insertion, liste_insertion)
+                            if number_current == attribute_val_default_fill_last:
+                                self.history_add_attribute(guid_parent=guid_parent_select,
+                                                           attribute_data=attribute_data_fill,
+                                                           parent_name=qs_parent_select.text(),
+                                                           number=self.tr("Groupe Remplissage"))
 
-                    self.change_made = True
+                            continue
 
-                    if number in attribute_val_default_layer:
-                        dict_comp_l[index_insertion] = liste_insertion
-                        if number == attribute_val_default_layer_last:
-                            self.undo_add_attribute(qs_parent=qstandarditem,
-                                                    index_attribut=index_insertion,
-                                                    liste_ele=list(),
-                                                    dict_comp=dict_comp_l,
-                                                    type_attribut=self.tr("Groupe Layer"))
-                        continue
+                        # -------------------
 
-                    if number in attribute_val_default_fill:
-                        dict_comp_r[index_insertion] = liste_insertion
-                        if number == attribute_val_default_fill_last:
-                            self.undo_add_attribute(qs_parent=qstandarditem,
-                                                    index_attribut=index_insertion,
-                                                    liste_ele=list(),
-                                                    dict_comp=dict_comp_r,
-                                                    type_attribut=self.tr("Groupe Remplissage"))
-                        continue
+                        if number_current in attribute_val_default_room:
 
-                    if number in attribute_val_default_room:
-                        dict_comp_p[index_insertion] = liste_insertion
+                            attribute_data_room.append(AttributeData(guid_current=guid_current,
+                                                                     row_current=index_insertion,
+                                                                     qs_list=qs_list_new))
 
-                        if number == attribute_val_default_room_last:
-                            self.undo_add_attribute(qs_parent=qstandarditem,
-                                                    index_attribut=index_insertion,
-                                                    liste_ele=list(),
-                                                    dict_comp=dict_comp_p,
-                                                    type_attribut=self.tr("Groupe Pièce"))
+                            if number_current == attribute_val_default_room_last:
+                                self.history_add_attribute(guid_parent=qs_parent_select.data(user_guid),
+                                                           attribute_data=attribute_data_room,
+                                                           parent_name=qs_parent_select.text(),
+                                                           number=self.tr("Groupe Pièce"))
+
+                            continue
+
+                        # -------------------
+
+                        attribute_data = [AttributeData(guid_current=guid_current,
+                                                        row_current=index_insertion,
+                                                        qs_list=qs_list_new)]
+
+                        self.history_add_attribute(guid_parent=qs_parent_select.data(user_guid),
+                                                   attribute_data=attribute_data,
+                                                   parent_name=qs_parent_select.text(),
+                                                   number=f"@{number_current}@")
+
                         continue
 
                     else:
+                        print("catalog_manage -- attribute_paste_action -- ignore")
+                        continue
 
-                        self.undo_add_attribute(qs_parent=qstandarditem,
-                                                index_attribut=index_insertion,
-                                                liste_ele=liste_insertion,
-                                                dict_comp=dict())
+                attribute_data = attribute_original_dict.get(number_current)
 
+                if not isinstance(attribute_data, AttributeCutData):
+                    print("catalog_manage -- attribute_paste_action -- not isinstance(qs_value, Attribute)")
+                    return False
+
+                # -----------------
+
+                if number_current in number_list and attribute_update:
+
+                    attribute_data.attribute_delete = False
+
+                    # -----------------
+
+                    qs_list_select = qs_parent_select.get_attribute_line_by_number(number=number_current)
+
+                    if not isinstance(qs_list_select, list):
+                        print("catalog_manage -- attribute_paste_action -- not isinstance(qs_list_select, list)")
+                        return False
+
+                    if len(qs_list_select) != col_cat_count:
+                        print("catalog_manage -- attribute_paste_action -- len(qs_list_select) != col_cat_count")
+                        return False
+
+                    # -------------------
+
+                    qs_value_select = qs_list_select[col_cat_value]
+
+                    if not isinstance(qs_value_select, Attribute):
+                        print("catalog_manage -- attribute_paste_action -- not isinstance(qs_value_select, Attribute)")
+                        return False
+
+                    # -------------------
+
+                    row_select = qs_value_select.row()
+
+                    if row_select == -1:
+                        print("catalog_manage -- attribute_paste_action -- row_select == -1")
+                        return False
+
+                    # -------------------
+
+                    value_select = qs_value_select.text()
+
+                    if not isinstance(value_select, str):
+                        print("catalog_manage -- attribute_paste_action -- not isinstance(value_select, str)")
+                        return False
+
+                    # -------------------
+
+                    guid_select = qs_value_select.data(user_guid)
+
+                    if not isinstance(guid_select, str):
+                        print("catalog_manage -- attribute_paste_action -- not isinstance(guid_select, str)")
+                        return False
+
+                    # -------------------
+
+                    qs_value_index_select = qs_list_select[col_cat_index]
+
+                    if not isinstance(qs_value_index_select, Info):
+                        print("catalog_manage -- attribute_paste_action -- not isinstance(qs_value_index_select, Info)")
+                        return False
+
+                    # -------------------
+
+                    value_index_select = qs_value_index_select.text()
+
+                    if not isinstance(value_index_select, str):
+                        print("catalog_manage -- attribute_paste_action -- not isinstance(value_index_select, str)")
+                        return False
+
+                    # -----------------
+
+                    qs_list_original = qs_parent_original.get_attribute_line_by_number(number=number_current)
+
+                    if not isinstance(qs_list_original, list):
+                        print("catalog_manage -- attribute_paste_action -- not isinstance(qs_list_original, list)")
+                        return False
+
+                    if len(qs_list_original) != col_cat_count:
+                        print("catalog_manage -- attribute_paste_action -- len(qs_list_original) != col_cat_count")
+                        return False
+
+                    # -------------------
+
+                    qs_value_original = qs_list_original[col_cat_value]
+
+                    if not isinstance(qs_value_original, Attribute):
+                        print("catalog_manage -- attribute_paste_action -- not isinstance(qs_value_select, Attribute)")
+                        return False
+
+                    # -------------------
+
+                    qs_value_index_original = qs_list_original[col_cat_index]
+
+                    if not isinstance(qs_value_index_original, Info):
+                        print("catalog_manage -- attribute_paste_action -- "
+                              "not isinstance(qs_value_index_original, Info)")
+                        return False
+
+                    # -------------------
+
+                    row_original = qs_value_original.row()
+
+                    if row_original == -1:
+                        print("catalog_manage -- attribute_paste_action -- row_original == -1")
+                        return False
+
+                    # ------------------- Save Select Datas
+
+                    attribute_data.row_select = row_select
+                    attribute_data.guid_select = guid_select
+                    attribute_data.value_select = value_select
+                    attribute_data.value_index_select = value_index_select
+
+                    # ------------------- Copy original Datas
+
+                    qs_value_select.setText(attribute_data.value_original)
+                    qs_value_select.setData(attribute_data.guid_original)
+
+                    qs_value_index_select.setText(attribute_data.value_index_original)
+
+                    # ------------------- suppression original
+
+                    qs_list_original = qs_parent_original.takeRow(row_original)
+
+                    if not isinstance(qs_list_original, list):
+                        print("catalog_manage -- attribute_paste_action -- not isinstance(qs_list_original, list)")
+                        return False
+
+                    if len(qs_list_original) != col_cat_count:
+                        print("catalog_manage -- attribute_paste_action -- len(qs_list_original) != col_cat_count")
+                        return False
+
+                elif number_current not in number_list:
+
+                    attribute_data.attribute_delete = True
+
+                    row_select = qs_parent_select.get_attribute_insertion_index(number=number_current)
+
+                    # -------------------
+
+                    qs_list_original = attribute_data.qs_list_original
+
+                    if not isinstance(qs_list_original, list):
+                        print("catalog_manage -- attribute_paste_action -- not isinstance(qs_list_original, list)")
+                        return False
+
+                    if len(qs_list_original) != col_cat_count:
+                        print("catalog_manage -- attribute_paste_action -- len(qs_list_original) != col_cat_count")
+                        return False
+
+                    # -------------------
+
+                    qs_list_select = list()
+                    row_original = -1
+
+                    for qs_current_column in qs_list_original:
+
+                        if not isinstance(qs_current_column, MyQstandardItem):
+                            print("catalog_manage -- attribute_paste_action -- "
+                                  "not isinstance(qs_current_column, MyQstandardItem)")
+                            return False
+
+                        qs_cloned = qs_current_column.clone_creation(new=False)
+
+                        if qs_current_column.column() == col_cat_value:
+                            row_original = qs_current_column.row()
+
+                            qs_current_column.clone_children(qs_original=qs_current_column,
+                                                             qs_destination=qs_cloned,
+                                                             new=False)
+
+                        qs_list_select.append(qs_cloned)
+
+                    # -------------------
+
+                    qs_parent_select.insertRow(row_select, qs_list_select)
+
+                    # ------------------- Delete original
+
+                    qs_list_original = qs_parent_original.takeRow(row_original)
+
+                    if not isinstance(qs_list_original, list):
+                        print("catalog_manage -- attribute_paste_action -- not isinstance(qs_list_original, list)")
+                        return False
+
+                    if len(qs_list_original) != col_cat_count:
+                        print("catalog_manage -- attribute_paste_action -- len(qs_list_original) != col_cat_count")
+                        return False
+
+                    attribute_data.row_original = row_original
+                    attribute_data.qs_list_original = qs_list_original
+
+                    # -------------------
+
+                else:
+                    print("catalog_manage -- attribute_paste_action -- ignore")
+                    continue
+
+                self.change_made = True
+
+                # ----------------- History
+
+                if number_current in attribute_val_default_layer:
+
+                    attribute_data_layer.append(attribute_data)
+
+                    if number_current == attribute_val_default_layer_last:
+                        self.history_cut_attribute(guid_parent_original=guid_parent_original,
+                                                   guid_parent_select=guid_parent_select,
+                                                   attribute_data=attribute_data_layer,
+                                                   parent_name=parent_name_original,
+                                                   number=self.tr("Groupe Layer"))
+
+                    continue
+
+                # -------------------
+
+                if number_current in attribute_val_default_fill:
+
+                    attribute_data_fill.append(attribute_data)
+
+                    if number_current == attribute_val_default_fill_last:
+                        self.history_cut_attribute(guid_parent_original=guid_parent_original,
+                                                   guid_parent_select=guid_parent_select,
+                                                   attribute_data=attribute_data_fill,
+                                                   parent_name=parent_name_original,
+                                                   number=self.tr("Groupe Remplissage"))
+
+                    continue
+
+                # -------------------
+
+                if number_current in attribute_val_default_room:
+
+                    attribute_data_room.append(attribute_data)
+
+                    if number_current == attribute_val_default_room_last:
+                        self.history_cut_attribute(guid_parent_original=guid_parent_original,
+                                                   guid_parent_select=guid_parent_select,
+                                                   attribute_data=attribute_data_room,
+                                                   parent_name=parent_name_original,
+                                                   number=self.tr("Groupe Pièce"))
+
+                    continue
+
+                # -------------------
+
+                self.history_cut_attribute(guid_parent_original=guid_parent_original,
+                                           guid_parent_select=guid_parent_select,
+                                           attribute_data=[attribute_data],
+                                           parent_name=parent_name_original,
+                                           number=f"@{number_current}@")
+
+                # -------------------
+
+        self.clipboard_attribute_cut.clear()
+
+        # -------------------
+
+        qs_selection = qs_selection_list[-1]
+
+        if not isinstance(qs_selection, (Folder, Material, Component)):
+            return True
+
+        self.hierarchy.select_list(selected_list=[qs_selection], scrollto=True, expand=True)
         return True
 
     def attribut_coller_recherche(self, liste_selections_qstandarditem: list, message=False) -> bool:
@@ -4433,8 +4784,6 @@ class CatalogDatas(QObject):
     def attributs_coller_datas(self, clipboard_attribute: ClipboardDatas,
                                titre_actuel: str, attributs_copier: dict, id_ele="0"):
 
-        nb_colonnes: int = self.cat_model.columnCount()
-
         liste_attributs_a: list = clipboard_attribute.get_datas_title(titre_actuel, id_ele)
         nb_items = len(liste_attributs_a)
 
@@ -4447,7 +4796,7 @@ class CatalogDatas(QObject):
 
         if titre_actuel == self.tr("Groupe Layer"):
 
-            if nb_items != nb_colonnes * len(attribute_val_default_layer):
+            if nb_items != col_cat_count * len(attribute_val_default_layer):
                 print("onglet_hierarchie -- attributs_coller_action --> nb_items != nb_colonnes * 5")
                 return
 
@@ -4455,14 +4804,14 @@ class CatalogDatas(QObject):
             index_2 = 1
 
             for numero in attribute_val_default_layer:
-                attributs_copier[numero] = liste_attributs_a[nb_colonnes * index_1:nb_colonnes * index_2]
+                attributs_copier[numero] = liste_attributs_a[col_cat_count * index_1:col_cat_count * index_2]
                 index_1 += 1
                 index_2 += 1
             return
 
         if titre_actuel == self.tr("Groupe Remplissage"):
 
-            if nb_items != nb_colonnes * len(attribute_val_default_fill):
+            if nb_items != col_cat_count * len(attribute_val_default_fill):
                 print("onglet_hierarchie -- attributs_coller_action --> nb_items != nb_colonnes * 5")
                 return
 
@@ -4470,14 +4819,14 @@ class CatalogDatas(QObject):
             index_2 = 1
 
             for numero in attribute_val_default_fill:
-                attributs_copier[numero] = liste_attributs_a[nb_colonnes * index_1:nb_colonnes * index_2]
+                attributs_copier[numero] = liste_attributs_a[col_cat_count * index_1:col_cat_count * index_2]
                 index_1 += 1
                 index_2 += 1
             return
 
         if titre_actuel == self.tr("Groupe Pièce"):
 
-            if nb_items != nb_colonnes * len(attribute_val_default_room):
+            if nb_items != col_cat_count * len(attribute_val_default_room):
                 print("onglet_hierarchie -- attributs_coller_action --> nb_items != nb_colonnes * 6")
                 return
 
@@ -4485,25 +4834,10 @@ class CatalogDatas(QObject):
             index_2 = 1
 
             for numero in attribute_val_default_room:
-                attributs_copier[numero] = liste_attributs_a[nb_colonnes * index_1:nb_colonnes * index_2]
+                attributs_copier[numero] = liste_attributs_a[col_cat_count * index_1:col_cat_count * index_2]
                 index_1 += 1
                 index_2 += 1
             return
-
-        # if titre_actuel == self.tr("Groupe Hauteur"):
-
-        #     if nb_items != nb_colonnes * len(attribute_val_default_ht):
-        #         print("onglet_hierarchie -- attributs_coller_action --> nb_items != nb_colonnes * 8")
-        #         return
-        #
-        #     index_1 = 0
-        #     index_2 = 1
-        #
-        #     for numero in attribute_val_default_ht:
-        #         attributs_copier[numero] = liste_attributs_a[nb_colonnes * index_1:nb_colonnes * index_2]
-        #         index_1 += 1
-        #         index_2 += 1
-        #     return
 
         if " -- " not in titre_actuel:
             print("onglet_hierarchie -- attributs_coller_action --> titre non valide")
@@ -4515,159 +4849,396 @@ class CatalogDatas(QObject):
         if len(datas) != 0:
             attributs_copier[numero] = datas[0]
 
-    def attributs_update_description(self, qs_actuel: QStandardItem, liste_actuelle: list):
+    def attributs_update_description(self, qs_current: MyQstandardItem, value_new: str) -> bool:
 
-        if qs_actuel is None:
-            return
+        if not isinstance(value_new, str):
+            print("catalog_manage -- attributs_update_description -- not isinstance(value_new, str)")
+            return False
 
-        qs_parent = qs_actuel.parent()
+        if not isinstance(qs_current, (Folder, Material, Component)):
+            print("catalog_manage -- attributs_update_description -- not isinstance(qs_current, Folder)")
+            return False
+
+        # ----------------
+
+        qs_parent = qs_current.parent()
 
         if qs_parent is None:
-            qs_parent = self.cat_model.invisibleRootItem()
+            qs_parent = self.hierarchy.cat_model.invisibleRootItem()
 
-        current_row = qs_actuel.row()
+        if not isinstance(qs_parent, QStandardItem):
+            print("catalog_manage -- attributs_update_description -- not isinstance(qs_parent, QStandardItem)")
+            return False
 
-        if len(liste_actuelle) == 0:
+        # ----------------
+
+        current_row = qs_current.row()
+
+        # ----------------
+
+        qs_desc = qs_parent.child(current_row, col_cat_desc)
+
+        if not isinstance(qs_desc, Info):
+            print("catalog_manage -- attributs_update_description -- not isinstance(qs_desc, Info)")
+            return False
+
+        qs_desc.setText(value_new)
+
+        # ----------------
+
+        if not isinstance(qs_current, Material):
+            return True
+
+        material_name = qs_current.text()
+
+        if not isinstance(material_name, str):
+            print("catalog_manage -- attributs_update_description -- not isinstance(material_name, str)")
+            return False
+
+        self.material_desc_changed(material_name=material_name, link_desc_after=value_new)
+
+        return True
+
+    def attribute_get_cut_datas(self):
+
+        attribute_dict = dict()
+
+        qs_parent_original = None
+        cut_values = self.clipboard_attribute_cut.get_values_list()
+
+        if not isinstance(cut_values, list):
+            print("catalog_manage -- attribute_get_cut_datas -- not isinstance(value, list)")
+            return None, dict()
+
+        if len(cut_values) == 0:
             return
 
-        qs_valeur: QStandardItem = liste_actuelle[0]
+        for datas in cut_values:
 
-        if not isinstance(qs_valeur, Attribute):
-            return
+            if not isinstance(datas, list):
+                print("catalog_manage -- attribute_get_cut_datas -- not isinstance(datas, list)")
+                return None, dict()
 
-        valeur_txt = qs_valeur.text()
+            # ---------
 
-        if not isinstance(valeur_txt, str):
-            return
+            if len(datas) != 2:
+                print("catalog_manage -- attribute_get_cut_datas -- len(datas) != 2")
+                return None, dict()
 
-        qs_description = qs_parent.child(current_row, col_cat_desc)
+            # ---------
 
-        if not isinstance(qs_description, Info):
-            return
+            qs_parent_original, qs_attribute_list = datas
 
-        qs_description.setText(valeur_txt)
+            if not isinstance(qs_parent_original, (Folder, Material, Component)):
+                print("catalog_manage -- attribute_get_cut_datas -- not isinstance(qs_parent, MyQstandardItem)")
+                return None, dict()
 
-    def attribute_couper_coller_action(self):
+            # ---------
 
-        qs_cut_list = self.clipboard_attribute_cut.get_values_list()
+            row_parent_original = qs_parent_original.row()
 
-        for qs_list in qs_cut_list:
+            if row_parent_original == -1:
 
-            if not isinstance(qs_list, list):
-                continue
+                guid_parent_original = qs_parent_original.data(user_guid)
 
-            if len(qs_list) != 2:
-                continue
+                if not isinstance(guid_parent_original, str):
+                    print("catalog_manage -- attribute_get_cut_datas -- not isinstance(guid_parent_original, str)")
+                    return None, dict()
 
-            # liste_datas = [qstandarditem_parent, qstandarditem]
+                qs_parent_original = self.guid_get_qs(guid=guid_parent_original)
 
-            qs_parent: MyQstandardItem = qs_list[0]
-            qs_value: MyQstandardItem = qs_list[1]
+                if not isinstance(qs_parent_original, (Folder, Material, Component)):
+                    return None, dict()
 
-            if not isinstance(qs_parent, (Material, Component)):
-                continue
+                row_parent_original = qs_parent_original.row()
 
-            if isinstance(qs_value, Attribute):
+                if row_parent_original == -1:
+                    print("catalog_manage -- attribute_get_cut_datas -- row_parent_original == -1")
+                    return None, dict()
 
-                index_row: int = qs_value.row()
+            # ===================================
 
-                if index_row == -1:
+            if isinstance(qs_attribute_list, list):
+
+                for qs_value in qs_attribute_list:
+
+                    result = self.attribute_get_cut_infos(qs_parent=qs_parent_original, qs_value=qs_value)
+
+                    if not isinstance(result, tuple):
+                        print("catalog_manage -- attribute_get_cut_datas -- not isinstance(result, tuple)")
+                        return None, dict()
+
+                    if len(result) != 2:
+                        print("catalog_manage -- attribute_get_cut_datas -- len(result) != 2")
+                        return None, dict()
+
+                    number, data = result
+
+                    attribute_dict[number] = data
+
+            elif isinstance(qs_attribute_list, Attribute):
+
+                result = self.attribute_get_cut_infos(qs_parent=qs_parent_original, qs_value=qs_attribute_list)
+
+                if not isinstance(result, tuple):
+                    print("catalog_manage -- attribute_get_cut_datas -- not isinstance(result, tuple)")
                     continue
 
-                qs_del = qs_parent.child(index_row, col_cat_value)
-
-                if not isinstance(qs_del, Attribute) or qs_del != qs_value:
+                if len(result) != 2:
+                    print("catalog_manage -- attribute_get_cut_datas -- len(result) != 2")
                     continue
 
-                qs_parent.takeRow(index_row)
+                number, data = result
 
-            elif isinstance(qs_value, list):
+                attribute_dict[number] = data
 
-                for qs in qs_value:
+            else:
+                print("catalog_manage -- attribute_get_cut_datas -- error type)")
+                return None, dict()
 
-                    index_row: int = qs.row()
+        return qs_parent_original, attribute_dict
 
-                    if index_row == -1:
-                        continue
+    def attribute_get_cut_infos(self, qs_parent: MyQstandardItem, qs_value: Attribute):
 
-                    qs_del = qs_parent.child(index_row, col_cat_value)
+        # print(qs_parent.rowCount(), qs_parent.text(), qs_parent.data(user_guid))
 
-                    if not isinstance(qs_del, Attribute) or qs_del != qs:
-                        continue
+        if not isinstance(qs_value, Attribute):
+            print("catalog_manage -- attribute_get_cut_infos -- not isinstance(qs_attribute, Attribute)")
+            return
 
-                    qs_parent.takeRow(index_row)
+            # -------------
 
-        # reset cut clipboard !
+        guid_original = qs_value.data(user_guid)
 
-        self.clipboard_attribute_cut.clear()
-        self.change_made = True
+        if not isinstance(guid_original, str):
+            print("catalog_manage -- attribute_get_cut_infos -- not isinstance(guid_original, str)")
+            return
+
+        # -------------
+
+        row_original = qs_value.row()
+
+        if row_original == -1:
+
+            qs_value = self.guid_get_qs(guid=guid_original, parent=qs_parent.index)
+
+            if not isinstance(qs_value, Attribute):
+                print("catalog_manage -- attribute_get_cut_infos -- not isinstance(qs_attribute, Attribute)")
+                return
+
+            row_original = qs_value.row()
+
+            if row_original == -1:
+                print("catalog_manage -- attribute_get_cut_infos -- not isinstance(qs_attribute, Attribute)")
+                return
+
+        # -------------
+
+        value_original = qs_value.text()
+
+        if not isinstance(value_original, str):
+            print("catalog_manage -- attribute_get_cut_infos -- not isinstance(value_original, str)")
+            return
+
+        # -------------
+
+        qs_number = qs_parent.child(row_original, col_cat_number)
+
+        if not isinstance(qs_number, Info):
+            print("catalog_manage -- attribute_get_cut_infos -- not isinstance(qs_number, Info)")
+            return
+
+        # -------------
+
+        number_current = qs_number.text()
+
+        if not isinstance(number_current, str):
+            print("catalog_manage -- attribute_get_cut_infos -- not isinstance(number_current, str)")
+            return
+
+        # -------------
+
+        qs_index = qs_parent.child(row_original, col_cat_index)
+
+        if not isinstance(qs_index, Info):
+            print("catalog_manage -- attribute_get_cut_infos -- not isinstance(qs_index, Info)")
+            return
+
+        # -------------
+
+        value_index_original = qs_index.text()
+
+        if not isinstance(value_index_original, str):
+            print("catalog_manage -- attribute_get_cut_infos -- not isinstance(value_index_original, str)")
+            return
+
+        # print(f"parent: {qs_parent.text()} (guid: {guid_original}, "
+        #       f"number: {number_current}, row_current: {row_original}")
+
+        return number_current, AttributeCutData(number_current=number_current,
+                                                guid_original=guid_original,
+                                                row_original=row_original,
+                                                qs_list_original=[qs_value, qs_index, qs_number],
+                                                value_original=value_original,
+                                                value_index_original=value_index_original)
 
     @staticmethod
     def a___________________gestion_erreurs___________________():
         pass
 
-    def erreur_selectionner_premiere(self):
+    def select_first_formula_error(self):
 
         if not self.ui.search_error_bt.isChecked():
             return
 
-        if self.cat_filter_2.rowCount() == 0:
+        if self.hierarchy.cat_filter_2.rowCount() == 0:
             self.ui.search_error_bt.setChecked(False)
             self.ui.search_error_bt.clicked.emit()
             return
 
-        qmodelindex = self.erreur_rechercher_formule(self.cat_filter_2, self.cat_filter_2.index(0, 0))
+        self.hierarchy.select_first_formula()
 
-        if qmodelindex is None:
+        attributes_count = self.ui.attributes_detail.count()
+
+        for row_index in range(attributes_count):
+
+            qlw = self.ui.attributes_detail.item(row_index)
+
+            if not isinstance(qlw, QListWidgetItem):
+                print("catalog_manage -- select_first_formula_error -- not isinstance(qlw, QListWidgetItem)")
+                continue
+
+            if qlw.data(user_data_type) != type_formule:
+                continue
+
+            widget = self.ui.attributes_detail.itemWidget(qlw)
+
+            try:
+                plain_text_edit = widget.ui.value_attrib
+                plain_text_edit.setFocus()
+
+                cursor = plain_text_edit.textCursor()
+                cursor.movePosition(QTextCursor.End)
+                plain_text_edit.setTextCursor(cursor)
+            except Exception:
+                pass
+
             return
 
-        self.catalog_select_action([qmodelindex])
+    def formula_find_similar(self, qs_formula: Attribute) -> list:
 
-    def erreur_rechercher_formule(self, filtre_actuel: QSortFilterProxyModel, qmodelindex_parent: QModelIndex):
+        if not isinstance(qs_formula, Attribute):
+            print("catalog_manage -- formula_find_similar -- not isinstance(qs_formula, Attribute)")
+            return list()
 
-        parent_nb_enfants = filtre_actuel.rowCount(qmodelindex_parent)
+        formula_current = qs_formula.text()
 
-        for index_row in range(parent_nb_enfants):
+        if not isinstance(formula_current, str):
+            print("catalog_manage -- formula_find_similar -- not isinstance(formula_current, str)")
+            return list()
 
-            qmodelindex = filtre_actuel.index(index_row, col_cat_value, qmodelindex_parent)
+        search_start = self.hierarchy.cat_model.index(0, col_cat_value)
 
-            if qmodelindex is None:
+        search = self.hierarchy.cat_model.match(search_start, Qt.DisplayRole, formula_current, -1,
+                                                Qt.MatchRecursive | Qt.MatchExactly)
+
+        return search
+
+    def formula_correct(self, qs_formula: Attribute, number_current: str, value_new: str) -> bool:
+
+        if not self.ui.search_error_bt.isChecked():
+            return False
+
+        if not isinstance(value_new, str) or not isinstance(number_current, str):
+            print("catalog_manage -- formula_correct -- not isinstance(value_new, str)")
+            return False
+
+        qm_list = self.formula_find_similar(qs_formula=qs_formula)
+
+        similar_count = len(qm_list)
+
+        if similar_count < 2:
+            print("catalog_manage -- formula_correct -- len(qm_list) < 2>")
+            return False
+
+        message = self.tr("Voulez-vous corriger les {x} formules identiques?")
+        message = message.replace("{x}", f"{similar_count}")
+
+        if msg(titre=application_title,
+               message=message,
+               type_bouton=QMessageBox.Ok | QMessageBox.No,
+               defaut_bouton=QMessageBox.No,
+               icone_question=True) != QMessageBox.Ok:
+            return False
+
+        qm_current = qs_formula.index()
+
+        for qm in qm_list:
+
+            if qm == qm_current:
                 continue
 
-            if not qmodelindex.isValid():
+            if not qm_check(qm):
+                print("catalog_manage -- formula_correct -- not qm_check(qm)")
                 continue
 
-            # test1 = qmodelindex_parent.data()
-            # test2 = qmodelindex.data()
+            qm: QModelIndex
 
-            formule_ok = qmodelindex.data(user_formule_ok)
+            # -------------
 
-            if formule_ok is not None:
+            value_current = qm.data()
 
-                if formule_ok != "":
+            if value_current == value_new:
+                continue
 
-                    qmodelindex_select = qmodelindex.parent()
+            # -------------
 
-                    # test3 = qmodelindex_select.data()
+            qm_parent = qm.parent()
 
-                    qmodelindex_hierachie = self.cat_filter.mapFromSource(qmodelindex_select)
+            if not qm_check(qm_parent):
+                print("catalog_manage -- formula_correct -- not qm_check(qm_parent)")
+                continue
 
-                    if qmodelindex_hierachie is None:
-                        return None
+            # -------------
 
-                    if not qmodelindex_hierachie.isValid():
-                        return None
+            guid_parent = qm_parent.data(user_guid)
 
-                    # test4 = qmodelindex_hierachie.data()
+            if not isinstance(guid_parent, str):
+                print("catalog_manage -- formula_correct -- not isinstance(guid_parent, str)")
+                continue
 
-                    return qmodelindex_hierachie
+            # -------------
 
-            nb_enfants = filtre_actuel.rowCount(qmodelindex)
+            parent_name = qm_parent.data()
 
-            if nb_enfants != 0:
-                return self.erreur_rechercher_formule(filtre_actuel, qmodelindex)
+            if not isinstance(parent_name, str):
+                print("catalog_manage -- formula_correct -- not isinstance(parent_name, str)")
+                continue
 
-            return qmodelindex
+            # -------------
+
+            data = AttributeModifyData(number_current=number_current, value_new=value_current)
+
+            attribute_data = [data]
+
+            value_dict = {number_current: [value_current, value_new]}
+
+            # -------------
+
+            self.hierarchy.cat_model.setData(qm, value_new)
+            self.hierarchy.cat_model.setData(qm, "", user_formule_ok)
+
+            # -------------
+
+            self.history_modify_attribute(guid_parent=guid_parent, attribute_data=attribute_data,
+                                          parent_name=parent_name, value_dict=value_dict)
+
+        if self.hierarchy.cat_filter_2.rowCount() == 0:
+            msg(titre=application_title,
+                message=self.tr("Aucune formule avec erreur trouvée!"),
+                icone_valide=True)
+
+            self.hierarchy.search_clear()
 
     @staticmethod
     def a___________________gestion_renommer___________________():
@@ -4698,740 +5269,8 @@ class CatalogDatas(QObject):
         self.formula_color_change_signal.emit()
 
     @staticmethod
-    def a___________________gestion_retour___________________():
+    def a___________________history_tools___________________():
         pass
-
-    def undo_add_ele(self, qs_parent: MyQstandardItem, qs_actuel: MyQstandardItem, index_ele: int,
-                     liste_ele: list, coller=False):
-
-        type_element = qs_actuel.data(user_data_type)
-        titre_element = qs_actuel.text()
-
-        if coller:
-            a = self.tr("Coller")
-            nom_action = f'{a} {type_element} : {titre_element}'
-
-        else:
-            a = self.tr("Ajout")
-            nom_action = f'{a} {type_element} : {titre_element}'
-
-        self.undo_list.ajouter_ele(nom_action=nom_action,
-                                   qs_parent=qs_parent,
-                                   qs_actuel=qs_actuel,
-                                   index_ele=index_ele,
-                                   liste_ele=liste_ele)
-
-        self.redo_clear()
-        self.undo_button_manage()
-
-    def undo_cut_ele(self, qs_parent_actuel: MyQstandardItem, qs_parent_futur: MyQstandardItem,
-                     qs_actuel: MyQstandardItem,
-                     row_actuel: int, row_futur: int, liste_ele: list):
-
-        type_element = qs_actuel.data(user_data_type)
-        titre_element = qs_actuel.text()
-
-        a = self.tr("Couper/Coller")
-        nom_action = f'{a} {type_element} : {titre_element}'
-
-        self.undo_list.couper_ele(nom_action=nom_action,
-                                  qs_parent_actuel=qs_parent_actuel,
-                                  qs_parent_futur=qs_parent_futur,
-                                  qs_actuel=qs_actuel,
-                                  row_actuel=row_actuel,
-                                  row_futur=row_futur,
-                                  liste_ele=liste_ele)
-
-        self.redo_clear()
-        self.undo_button_manage()
-
-    def undo_del_ele(self, qs_parent: QStandardItem, qs_actuel: QStandardItem, index_ele: int,
-                     liste_ele: list):
-
-        type_element = qs_actuel.data(user_data_type)
-        titre_element = qs_actuel.text()
-
-        a = self.tr("Supprimer")
-
-        self.undo_list.suppression_ele(nom_action=f'{a} {type_element} : '
-                                                  f'{titre_element}',
-                                       qs_parent=qs_parent,
-                                       qs_actuel=qs_actuel,
-                                       index_ele=index_ele,
-                                       liste_ele=liste_ele)
-
-        self.redo_clear()
-        self.undo_button_manage()
-
-    def undo_move_ele(self, qs_parent: QStandardItem, qs_actuel: QStandardItem, row_actuel: int,
-                      row_futur: int):
-
-        a = self.tr("Déplacement")
-
-        self.undo_list.deplacer_ele(nom_action=f"{a} '{qs_actuel.text()}'",
-                                    qs_parent=qs_parent,
-                                    qs_actuel=qs_actuel,
-                                    row_actuel=row_actuel,
-                                    row_futur=row_futur)
-
-        self.redo_clear()
-        self.undo_button_manage()
-
-    def undo_move_materials(self, qs_parent: QStandardItem, qs_new_list: list):
-
-        self.undo_list.move_materials(nom_action=self.tr("Déplacement vers dossier"),
-                                      qs_parent=qs_parent,
-                                      qs_new_list=qs_new_list)
-
-        self.redo_clear()
-        self.undo_button_manage()
-
-    def undo_library_synchro(self):
-
-        if len(self.library_synchro_list) == 0:
-            return
-
-        self.undo_list.library_synchro(nom_action=self.tr("Synchronisation"),
-                                       library_synchro_list=self.library_synchro_list)
-
-        self.redo_clear()
-        self.undo_button_manage()
-
-    def undo_icon_changed(self, qs_actuel: QStandardItem, ancien_icone: str, nouvel_icone: str):
-
-        a = self.tr("Changement icône")
-
-        self.undo_list.modif_icone(nom_action=f"{a} : '{qs_actuel.text()}'",
-                                   qs_actuel=qs_actuel,
-                                   ancien_icone=ancien_icone,
-                                   nouvel_icone=nouvel_icone)
-
-        self.redo_clear()
-        self.undo_button_manage()
-
-    def undo_add_attribute(self, qs_parent: QStandardItem, index_attribut: int, liste_ele: list,
-                           dict_comp: dict, type_attribut=""):
-
-        qs_numero: QStandardItem = qs_parent.child(index_attribut, col_cat_number)
-
-        if qs_numero is None:
-            return
-
-        numero = qs_numero.text()
-        titre_actuel = qs_parent.text()
-
-        if type_attribut != "":
-            a = self.tr("Ajouter attribut")
-            nom_action = f"[{titre_actuel}] {a} {type_attribut}"
-
-        else:
-            a = self.tr("Ajouter")
-            nom_action = f"[{titre_actuel}] {a} @{numero}@"
-
-        self.undo_list.ajouter_attribut(nom_action=nom_action,
-                                        qs_parent=qs_parent,
-                                        index_attribut=index_attribut,
-                                        liste_ele=liste_ele,
-                                        dict_comp=dict_comp,
-                                        type_attribut=type_attribut)
-
-        self.redo_clear()
-        self.undo_button_manage()
-
-    def undo_modify_attribute(self, qs_actuel: MyQstandardItem,
-                              numero: str, ancienne_valeur: str, nouvelle_valeur: str, ancien_index="-1",
-                              nouvel_index="-1", dict_comp=None, type_attribut=""):
-
-        if dict_comp is None:
-            dict_comp = {}
-
-        if ancienne_valeur == nouvelle_valeur and ancien_index == nouvel_index:
-            return
-
-        # print(numero, ancienne_valeur, nouvelle_valeur, ancien_index, nouvel_index)
-
-        if not isinstance(qs_actuel, MyQstandardItem):
-            return
-
-        qs_parent = qs_actuel.parent()
-
-        if not isinstance(qs_parent, MyQstandardItem):
-            qs_parent = self.cat_model.invisibleRootItem()
-
-        titre_actuel = qs_actuel.text()
-        index_ele = qs_actuel.row()
-
-        nb_colonnes = self.cat_model.columnCount()
-
-        # ------
-
-        liste_ele = [qs_parent.child(index_ele, index_colonne) for index_colonne in range(nb_colonnes)
-                     if qs_parent.child(index_ele, index_colonne) is not None]
-
-        if len(liste_ele) != self.cat_model.columnCount():
-            return
-
-        if len(dict_comp) == 0:
-
-            a = self.tr("modification")
-            b = self.tr("Vide")
-
-            nom_action = f"[{titre_actuel}] {a} @{numero}@"
-
-            if ancienne_valeur == "":
-                ancienne_valeur_tps = f"'{b}'"
-            else:
-                ancienne_valeur_tps = ancienne_valeur
-
-            if nouvelle_valeur == "":
-                nouvelle_valeur_tps = f"'{b}'"
-            else:
-                nouvelle_valeur_tps = nouvelle_valeur
-            a = self.tr("modification attribut")
-            tooltips = (f'{titre_actuel} : {a} {numero} \n'
-                        f"     {ancienne_valeur_tps} --> {nouvelle_valeur_tps}")
-
-        else:
-            dict_comp: dict
-
-            a = self.tr("modification")
-
-            nom_action = f'[{titre_actuel}] {a} {type_attribut}'
-
-            b = self.tr("modification attribut")
-            tooltips = (f'{titre_actuel} : {b} {type_attribut} \n'
-                        f"     {numero} --> {ancienne_valeur} --> {nouvelle_valeur}")
-
-            for dict_datas in dict_comp.values():
-
-                dict_datas: dict
-
-                numero_comp = dict_datas["numero"]
-                val_o_comp = dict_datas["valeur_originale"]
-                val_f_comp = dict_datas["nouveau_texte"]
-
-                if val_o_comp == val_f_comp:
-                    continue
-
-                b = self.tr("Vide")
-
-                if val_o_comp == "":
-                    val_o_comp = f"'{b}'"
-
-                if val_f_comp == "":
-                    val_f_comp = f"'{b}'"
-
-                tooltips += f"\n     {numero_comp} --> {val_o_comp} --> {val_f_comp}"
-
-        self.undo_list.modifier_attribut(nom_action=nom_action,
-                                         tooltips=tooltips,
-                                         qs_parent=qs_parent,
-                                         qs_actuel=qs_actuel,
-                                         index_ele=index_ele,
-                                         liste_ele=liste_ele,
-                                         ancienne_valeur=ancienne_valeur,
-                                         nouvelle_valeur=nouvelle_valeur,
-                                         ancien_index=ancien_index,
-                                         nouvel_index=nouvel_index,
-                                         dict_comp=dict_comp,
-                                         type_attribut=type_attribut)
-
-        self.redo_clear()
-        self.undo_button_manage()
-
-    def undo_del_attribute(self, qs_parent: QStandardItem, index_attribut: int, liste_ele: list,
-                           dict_comp: dict, type_attribut: str):
-
-        qs_numero: QStandardItem = liste_ele[col_cat_number]
-
-        if qs_numero is None:
-            return
-
-        titre_actuel = qs_parent.text()
-        numero = qs_numero.text()
-
-        if type_attribut != "":
-            a = self.tr("Supprimer attribut")
-            nom_action = f'[{titre_actuel}] {a} {type_attribut}'
-
-        else:
-            a = self.tr("Supprimer")
-            nom_action = f'[{titre_actuel}] {a} @{numero}@'
-
-        self.undo_list.supprimer_attribut(nom_action=nom_action,
-                                          qs_parent=qs_parent,
-                                          index_attribut=index_attribut,
-                                          liste_ele=liste_ele,
-                                          dict_comp=dict_comp)
-
-        self.redo_clear()
-        self.undo_button_manage()
-
-    def undo(self, action_actuelle: ActionInfo):
-
-        type_action = action_actuelle.action_type
-
-        data: dict = action_actuelle.data
-
-        id_action: int = data["id_action"]
-
-        # -------------------------
-        # Ajouter -> supprimer ele
-        # -------------------------
-
-        if type_action == ajouter_ele:
-
-            qs_parent: QStandardItem = data["qs_parent"]
-            qs_actuel: QStandardItem = data["qs_actuel"]
-
-            qm = self.cat_model.indexFromItem(qs_actuel)
-
-            if not qm_check(qm):
-                return
-
-            index_ele = qm.row()
-
-            ele_type = qm.data(user_data_type)
-
-            self.material_is_deletable(qs=qs_actuel, delete=True)
-
-            qs_parent.takeRow(index_ele)
-
-            if ele_type == attribute_code:
-                qs_selection = qs_parent
-
-            else:
-
-                last_item = qs_parent.rowCount() - 1
-                first_item = 0
-
-                if isinstance(qs_parent, MyQstandardItem):
-                    attributes_list = qs_parent.get_attribute_numbers_list()
-                    first_item = len(attributes_list)
-
-                if index_ele < first_item:
-                    index_ele = first_item
-                elif index_ele > last_item:
-                    index_ele = last_item
-
-                qs_selection = qs_parent.child(index_ele, col_cat_value)
-
-            if qs_selection is None:
-                print("catalog -- undo -- qs_selection is None")
-            else:
-                self.catalog_select_action([qs_selection])
-
-            self.undo_action_end(id_action)
-            return
-
-        # -------------------------
-        # Couper
-        # -------------------------
-
-        if type_action == couper_ele:
-
-            id_action = data["id_action"]
-            qs_parent_actuel: QStandardItem = data["qs_parent_actuel"]
-            qs_parent_futur: QStandardItem = data["qs_parent_futur"]
-            row_actuel: int = data["row_actuel"]
-            row_futur: int = data["row_futur"]
-            liste_ele: list = data["liste_ele"]
-
-            nb_enfants = qs_parent_futur.rowCount()
-
-            if row_futur > nb_enfants:
-                return
-
-            qs_parent_futur.takeRow(row_futur)
-
-            qs_parent_actuel.insertRow(row_actuel, liste_ele)
-
-            self.catalog_select_action([qs_parent_actuel.child(row_actuel, col_cat_value)])
-
-            self.undo_action_end(id_action)
-
-            return
-
-        # -------------------------
-        # Supprimer -> Ajouter ele
-        # -------------------------
-
-        if type_action == supprimer_ele:
-
-            id_action = data["id_action"]
-            qs_parent: QStandardItem = data["qs_parent"]
-            index_ele: int = data["index_ele"]
-            liste_ele: list = data["liste_ele"]
-
-            nb_enfants = qs_parent.rowCount()
-
-            if index_ele > nb_enfants:
-                index_ele = 0
-
-            qs_parent.insertRow(index_ele, liste_ele)
-
-            qs_actuel: MyQstandardItem = data["qs_actuel"]
-            self.material_add(qs_actuel)
-
-            self.catalog_select_action([qs_parent.child(index_ele, col_cat_value)])
-
-            self.undo_action_end(id_action)
-
-            return
-
-        # -------------------------
-        # Re-Placer de l'élément déplacer
-        # -------------------------
-
-        if type_action == deplacer_ele:
-            qs_parent: QStandardItem = data["qs_parent"]
-            row_actuel: int = data["row_actuel"]
-            row_futur: list = data["row_futur"]
-
-            liste_ele = qs_parent.takeRow(row_futur)
-            qs_parent.insertRow(row_actuel, liste_ele)
-
-            self.catalog_select_action([qs_parent.child(row_actuel, col_cat_value)])
-
-            self.undo_action_end(id_action)
-
-            return
-
-        # -------------------------
-        # Re-placer Material
-        # -------------------------
-
-        if type_action == deplacer_material:
-
-            qs_parent = data["qs_parent"]
-            qs_new_list = data["qs_new_list"]
-
-            if not isinstance(qs_parent, Folder) or not isinstance(qs_new_list, list):
-                return
-
-            if len(qs_new_list) != qs_parent.columnCount():
-                return
-
-            qs_new_parent = qs_new_list[0]
-
-            if not isinstance(qs_new_parent, Folder):
-                return
-
-            row_count = qs_new_parent.rowCount()
-
-            attributes_list = qs_parent.get_attribute_numbers_list()
-            attributes_count = len(attributes_list)
-
-            for row_index in reversed(range(row_count)):
-
-                qs_current = qs_new_parent.child(row_index, col_cat_value)
-
-                if not isinstance(qs_current, Material):
-                    continue
-
-                children_qs_list = qs_new_parent.takeRow(row_index)
-
-                if not isinstance(children_qs_list, list):
-                    continue
-
-                if len(children_qs_list) != qs_parent.columnCount():
-                    continue
-
-                qs_parent.insertRow(attributes_count, children_qs_list)
-
-            folder_new_row_index = qs_new_parent.row()
-
-            qs_parent.takeRow(folder_new_row_index)
-
-            self.catalog_select_action([qs_parent])
-            self.undo_action_end(id_action)
-
-            return
-
-        # -------------------------
-        # Re-Modifier l'icône du dossier
-        # -------------------------
-
-        if type_action == modif_icone:
-            qs_actuel: MyQstandardItem = data["qs_actuel"]
-            ancien_icone = data["ancien_icone"]
-
-            qs_actuel.icon_path = ancien_icone
-            qs_actuel.setIcon(get_icon(ancien_icone))
-
-            self.undo_action_end(id_action)
-
-            current_element = self.get_current_qs()
-
-            if current_element == qs_actuel:
-                self.catalog_select_action([current_element])
-            return
-
-        # -------------------------
-        # Supprimer l'attribut créé
-        # -------------------------
-
-        if type_action == ajouter_attr:
-
-            qs_parent: QStandardItem = data["qs_parent"]
-            index_attribut: int = data["index_attribut"]
-            dict_comp: dict = data["dict_comp"]
-
-            if len(dict_comp) != 0:
-
-                for index_ele in reversed(dict_comp):
-                    qs_parent.takeRow(index_ele)
-            else:
-                qs_parent.takeRow(index_attribut)
-
-            self.catalog_select_action([qs_parent])
-            self.undo_action_end(id_action)
-
-            return
-
-        # -------------------------
-        # Re-Modifier l'attribut modifié
-        # -------------------------
-
-        if type_action == modifier_attr:
-
-            qs_parent: MyQstandardItem = data["qs_parent"]
-            liste_ele: list = data["liste_ele"]
-
-            ancienne_valeur: str = data["ancienne_valeur"]
-            nouvelle_valeur: str = data["nouvelle_valeur"]
-            ancien_index: str = data["ancien_index"]
-            nouvel_index: str = data["nouvel_index"]
-            dict_comp: dict = data["dict_comp"]
-
-            if dict_comp is None:
-                dict_comp = dict()
-
-            # Modification des attributs complémentaires
-
-            if len(dict_comp) != 0:
-                for dict_datas in dict_comp.values():
-
-                    dict_datas: dict
-
-                    numero_comp = dict_datas["numero"]
-                    val_o_comp = dict_datas["valeur_originale"]
-                    val_f_comp = dict_datas["nouveau_texte"]
-                    ind_o_comp = dict_datas["ancien_index"]
-                    ind_f_comp = dict_datas["nouvel_index"]
-
-                    if val_o_comp == val_f_comp and ind_o_comp == ind_f_comp:
-                        continue
-
-                    recherche = qs_parent.get_attribute_line_by_number(numero_comp)
-
-                    qs_val_comp = recherche[0]
-
-                    if val_o_comp != val_f_comp:
-                        if not isinstance(qs_val_comp, MyQstandardItem):
-                            continue
-
-                        qs_val_comp.setText(val_o_comp)
-
-                    qs_ind_comp = recherche[1]
-
-                    if ind_o_comp != ind_f_comp:
-
-                        if not isinstance(qs_ind_comp, MyQstandardItem):
-                            continue
-
-                        qs_ind_comp.setText(ind_o_comp)
-
-            qs_numero: QStandardItem = liste_ele[col_cat_number]
-
-            if qs_numero is not None:
-
-                numero = qs_numero.text()
-
-                if numero == attribute_default_base and isinstance(qs_parent, Material):
-                    self.material_code_renamed(code_before=nouvelle_valeur,
-                                               code_after=ancienne_valeur)
-
-                if numero == "207":
-
-                    index_207: int = qs_parent.row()
-                    qs_parent_207: QStandardItem = qs_parent.parent()
-
-                    if qs_parent_207 is None:
-                        qs_parent_207 = self.cat_model.invisibleRootItem()
-
-                    qs_desc = qs_parent_207.child(index_207, col_cat_desc)
-
-                    if isinstance(qs_desc, Info):
-
-                        valeur_actuel = qs_desc.text()
-
-                        if valeur_actuel == nouvelle_valeur and valeur_actuel != ancienne_valeur:
-                            qs_desc.setText(ancienne_valeur)
-
-            # Modification de l'attribut principal
-
-            qs_val: QStandardItem = liste_ele[col_cat_value]
-
-            if qs_val is not None:
-
-                valeur_actuel = qs_val.text()
-
-                if valeur_actuel == nouvelle_valeur and valeur_actuel != ancienne_valeur:
-                    qs_val.setText(ancienne_valeur)
-
-            qs_index: QStandardItem = liste_ele[col_cat_index]
-
-            if qs_index is not None:
-
-                index_actuel = qs_index.text()
-
-                if index_actuel == nouvel_index and index_actuel != ancien_index:
-                    qs_index.setText(ancien_index)
-
-            self.undo_action_end(id_action)
-
-            self.catalog_select_action([qs_parent])
-            return
-
-        # -------------------------
-        # Création l'attribut supprimer
-        # -------------------------
-
-        if type_action == supprimer_attr:
-
-            qs_parent: QStandardItem = data["qs_parent"]
-            index_attribut: int = data["index_attribut"]
-            liste_ele: list = data["liste_ele"]
-            dict_comp: dict = data["dict_comp"]
-
-            if len(dict_comp) != 0:
-
-                qs_parent.insertRow(index_attribut, liste_ele)
-
-                for index_ele, liste_ele in dict_comp.items():
-                    qs_parent.insertRow(index_ele, liste_ele)
-            else:
-
-                qs_parent.insertRow(index_attribut, liste_ele)
-
-            self.undo_action_end(id_action)
-
-            self.catalog_select_action([qs_parent])
-
-            return
-
-        # -------------------------
-        # Library synchonization
-        # -------------------------
-
-        if type_action == library_synchro_code:
-
-            library_synchro_list = data["library_synchro_list"]
-
-            if not isinstance(library_synchro_list, list):
-                return
-
-            qs_parent = QStandardItem()
-
-            for datas in reversed(library_synchro_list):
-
-                if not isinstance(datas, dict):
-                    continue
-
-                qs_parent = datas.get("qs_parent")
-
-                if not isinstance(qs_parent, (Folder, Material, Component)):
-                    continue
-
-                is_creation = datas.get("creation", False)
-
-                # ------------
-                # Suppression
-                # ------------
-
-                if is_creation:
-
-                    index_attribut = datas.get("index_attribut")
-
-                    if not isinstance(index_attribut, int):
-                        continue
-
-                    if index_attribut < 0:
-                        continue
-
-                    qs_parent.takeRow(index_attribut)
-
-                    continue
-
-                # ------------
-                # Update
-                # ------------
-
-                qs_value = datas.get("qs_value")
-
-                if not isinstance(qs_value, Attribute):
-                    continue
-
-                value_before = datas.get("value_before")
-
-                if not isinstance(value_before, str):
-                    continue
-
-                # ------------
-
-                qs_index_value = datas.get("qs_index_value")
-
-                if not isinstance(qs_index_value, Attribute):
-                    continue
-
-                index_value_before = datas.get("index_value_before")
-
-                if not isinstance(index_value_before, str):
-                    continue
-
-                # ------------
-
-                qs_value.setText(value_before)
-                qs_index_value.setText(index_value_before)
-
-                # ------------
-
-                qs_desc = datas.get("qs_desc")
-
-                if isinstance(qs_desc, Info):
-                    qs_desc.setText(value_before)
-
-            self.undo_action_end(id_action)
-
-            if not isinstance(qs_parent, (Folder, Material, Component)):
-                return
-
-            self.catalog_select_action([qs_parent])
-
-            return
-
-            # ------------
-
-        self.undo_action_end(id_action)
-        return
-
-    def undo_action_end(self, nom_action: int):
-
-        action = self.undo_list.dict_actions.get(nom_action, None)
-
-        if action is None:
-            return
-
-        self.redo_list.dict_actions[nom_action] = action
-        self.undo_list.supprimer_action(nom_action)
-
-        self.undo_button_manage()
-        self.redo_button_manage()
-
-    def undo_button_manage(self):
-        self.ui.undo_bt.setEnabled(len(self.undo_list.dict_actions) != 0)
-        self.ui.undo_list_bt.setEnabled(len(self.undo_list.dict_actions) != 0)
 
     def get_special_number(self, qs_parent: MyQstandardItem, number: str) -> Tuple[str, dict]:
         """
@@ -5453,10 +5292,6 @@ class CatalogDatas(QObject):
             return "Pièce", self.creation_liste_complementaire(qs_parent=qs_parent,
                                                                datas_dict=attribute_val_default_room)
 
-        # if number in attribute_val_default_ht:
-        #     return "Hauteur", self.creation_liste_complementaire(qs_parent=qs_parent,
-        #                                                          datas_dict=attribute_val_default_ht)
-
         return "", dict()
 
     @staticmethod
@@ -5468,438 +5303,1700 @@ class CatalogDatas(QObject):
 
             qs_list = qs_parent.get_attribute_line_by_number(number=numero_rechercher)
 
-            qs_val = qs_list[0]
-
-            if not isinstance(qs_val, Attribute):
+            if not isinstance(qs_list, list):
+                print("catalog_manage -- creation_liste_complementaire -- not isinstance(qs_list, list)")
                 continue
 
-            index_ele = qs_val.row() + 1
+            if len(qs_list) != col_cat_count:
+                print("catalog_manage -- creation_liste_complementaire -- len(qs_list) != col_cat_count")
+                continue
+
+            qs_value = qs_list[col_cat_value]
+
+            if not isinstance(qs_value, Attribute):
+                print("catalog_manage -- creation_liste_complementaire -- not isinstance(qs_value, Attribute)")
+                continue
+
+            index_ele = qs_value.row() + 1
 
             liste_ele = [qs_parent.child(index_ele, index_colonne)
-                         for index_colonne in range(qs_parent.columnCount())
+                         for index_colonne in range(col_cat_count)
                          if qs_parent.child(index_ele, index_colonne) is not None]
 
             dict_complementaires[index_ele] = liste_ele
 
         return dict_complementaires
 
+    def guid_get_qs(self, guid: str, parent=None, column=col_cat_value):
+
+        if not isinstance(guid, str):
+            print("catalog_manage -- guid_get_qs -- not isinstance(guid, str)")
+            return None
+
+        if self.hierarchy.cat_model.invisibleRootItem().data(user_guid) == guid:
+            return self.hierarchy.cat_model.invisibleRootItem()
+
+        if isinstance(parent, QModelIndex):
+            start_search = self.hierarchy.cat_model.index(0, column, parent)
+        else:
+            start_search = self.hierarchy.cat_model.index(0, column)
+
+        search = self.hierarchy.cat_model.match(start_search, user_guid, guid, -1, Qt.MatchExactly | Qt.MatchRecursive)
+
+        if len(search) != 1:
+            print("catalog_manage -- guid_get_qs -- len(search) != 1")
+            return None
+
+        qs = self.hierarchy.get_qs_by_qm(qm=search[0])
+
+        if not isinstance(qs, QStandardItem):
+            print("catalog_manage -- guid_get_qs -- not isinstance(qs, QStandardItem)")
+            return None
+
+        return qs
+
     @staticmethod
-    def a___________________gestion_revenir___________________():
+    def a___________________history___________________():
         pass
 
-    def redo(self, action_actuelle):
+    def history_add_ele(self, qs_current: MyQstandardItem, paste=False):
 
-        type_action = action_actuelle.action_type
+        ele_type = qs_current.data(user_data_type)
+        ele_name = qs_current.text()
 
-        data: dict = action_actuelle.data
+        if paste:
+            title = self.tr("Coller")
+            action_name = f'{title} {ele_type} : {ele_name}'
 
-        id_action: int = data["id_action"]
+        else:
+            title = self.tr("Ajout")
+            action_name = f'{title} {ele_type} : {ele_name}'
 
-        if type_action == ajouter_ele:
-            qs_parent: QStandardItem = data["qs_parent"]
-            liste_ele: list = data["liste_ele"]
-            index_ele = data["index_ele"]
+        self.undo_list.action_add_ele(action_name=action_name, qs_current=qs_current)
 
-            qs_parent.insertRow(index_ele, liste_ele)
+        self.redo_clear()
+        self.undo_button_manage()
 
-            qs_actuel: MyQstandardItem = data["qs_actuel"]
+    def history_del_ele(self, qs_parent: QStandardItem, qs_current: QStandardItem, row_current: int, qs_list: list):
 
-            self.material_add(qs_actuel)
+        ele_type = qs_current.data(user_data_type)
+        ele_name = qs_current.text()
 
-            self.catalog_select_action([qs_parent.child(index_ele, col_cat_value)])
+        title = self.tr("Supprimer")
 
-            self.redo_action_end(id_action)
+        self.undo_list.action_del_ele(action_name=f'{title} {ele_type} : {ele_name}',
+                                      guid_parent=qs_parent.data(user_guid),
+                                      qs_current=qs_current,
+                                      row_current=row_current,
+                                      qs_list=qs_list)
 
+        self.redo_clear()
+        self.undo_button_manage()
+
+    def history_move_ele(self, qs_current: QStandardItem, row_current: int, row_new: int):
+
+        title = self.tr("Déplacement")
+        ele_name = qs_current.text()
+
+        self.undo_list.action_move_ele(action_name=f"{title} : {ele_name}",
+                                       guid_current=qs_current.data(user_guid),
+                                       row_current=row_new,
+                                       row_new=row_current)
+
+        self.redo_clear()
+        self.undo_button_manage()
+
+    def history_cut_ele(self, guid_parent_new: str, qs_current: QStandardItem, row_new: int):
+
+        ele_type = qs_current.data(user_data_type)
+        ele_name = qs_current.text()
+
+        title = self.tr("Couper/Coller")
+
+        self.undo_list.action_cut_ele(action_name=f'{title} {ele_type} : {ele_name}',
+                                      guid_parent_new=guid_parent_new,
+                                      guid_current=qs_current.data(user_guid),
+                                      row_new=row_new)
+
+        self.redo_clear()
+        self.undo_button_manage()
+
+    def history_move_materials(self, guid_parent: str, guid_material: str, guid_new_folder: str, material_name):
+
+        action_name = self.tr("Déplacement vers dossier")
+        action_name += f": {material_name}"
+
+        self.undo_list.action_move_materials(action_name=action_name,
+                                             guid_parent=guid_parent,
+                                             guid_new_folder=guid_new_folder,
+                                             guid_material=guid_material)
+
+        self.redo_clear()
+        self.undo_button_manage()
+
+    def history_change_icon(self, qs_current: QStandardItem):
+
+        title = self.tr("Changement icône")
+        ele_name = qs_current.text()
+
+        self.undo_list.action_change_icon(action_name=f"{title} : {ele_name}",
+                                          guid_current=qs_current.data(user_guid),
+                                          icon_new=qs_current.icon())
+
+        self.redo_clear()
+        self.undo_button_manage()
+
+    def history_add_attribute(self, guid_parent: str, attribute_data: list, parent_name: str, number: str):
+
+        if "@" in number:
+            title = self.tr("Ajouter")
+        else:
+            title = self.tr("Ajouter attribut")
+
+        action_name = f"[{parent_name}] {title} : {number}"
+
+        self.undo_list.action_add_attribute(action_name=action_name,
+                                            guid_parent=guid_parent,
+                                            attribute_data=attribute_data)
+
+        self.redo_clear()
+        self.undo_button_manage()
+
+    def history_del_attribute(self, guid_parent: str, attribute_data: dict, parent_name: str, number: str):
+
+        if "@" in number:
+            title = self.tr("Supprimer")
+        else:
+            title = self.tr("Supprimer attribut")
+
+        action_name = f"[{parent_name}] {title} : {number}"
+
+        self.undo_list.action_del_attribute(action_name=action_name,
+                                            guid_parent=guid_parent,
+                                            attribute_data=attribute_data)
+
+        self.redo_clear()
+        self.undo_button_manage()
+
+    def history_cut_attribute(self, guid_parent_original: str, guid_parent_select: str, attribute_data: list,
+                              parent_name: str, number: str):
+
+        if "@" in number:
+            title = self.tr("Couper")
+        else:
+            title = self.tr("Couper attribut")
+
+        action_name = f"[{parent_name}] {title} : {number}"
+
+        self.undo_list.action_cut_attribute(action_name=action_name,
+                                            guid_parent_original=guid_parent_original,
+                                            guid_parent_select=guid_parent_select,
+                                            attribute_data=attribute_data)
+
+        self.redo_clear()
+        self.undo_button_manage()
+
+    def history_modify_attribute(self, guid_parent: str, attribute_data: list, parent_name: str,
+                                 value_dict: dict, attribute_type=""):
+
+        if isinstance(guid_parent, float):
+            guid_parent = int(guid_parent)
+
+        if not isinstance(value_dict, dict):
+            print("catalog_manage -- history_modify_attribute -- not isinstance(value_dict, dict)")
             return
 
-        # -------------------------
-        # Création de l'élément supprimer
-        # -------------------------
+        tooltips_list = list()
+        empty_txt = self.tr("Vide")
+        number = ""
 
-        if type_action == couper_ele:
+        for number, value_list in value_dict.items():
 
-            id_action = data["id_action"]
-            qs_parent_futur: QStandardItem = data["qs_parent_actuel"]
-            qs_parent_actuel: QStandardItem = data["qs_parent_futur"]
-            row_futur: int = data["row_actuel"]
-            row_actuel: int = data["row_futur"]
-            liste_ele: list = data["liste_ele"]
-
-            nb_enfants = qs_parent_futur.rowCount()
-
-            if row_futur > nb_enfants:
+            if not isinstance(number, str) or not isinstance(value_list, list):
+                print("catalog_manage -- history_modify_attribute -- not isinstance(number, str)")
                 return
 
-            qs_parent_futur.takeRow(row_futur)
-
-            qs_parent_actuel.insertRow(row_actuel, liste_ele)
-
-            self.catalog_select_action([qs_parent_actuel.child(row_actuel, col_cat_value)])
-
-            self.redo_action_end(id_action)
-
-            return
-
-        # -------------------------
-        # Supprimer
-        # -------------------------
-
-        if type_action == supprimer_ele:
-            id_action = data["id_action"]
-            qs_parent: QStandardItem = data["qs_parent"]
-            index_ele: int = data["index_ele"]
-
-            if index_ele >= qs_parent.rowCount():
-                index_ele = 0
-
-            qs_actuel: MyQstandardItem = data["qs_actuel"]
-            self.material_is_deletable(qs=qs_actuel, delete=True)
-
-            qs_parent.takeRow(index_ele)
-
-            self.catalog_select_action([qs_parent.child(index_ele, col_cat_value)])
-
-            self.redo_action_end(id_action)
-
-            return
-
-        # -------------------------
-        # Re-placer élément
-        # -------------------------
-
-        if type_action == deplacer_ele:
-            qs_parent: QStandardItem = data["qs_parent"]
-            row_actuel: int = data["row_actuel"]
-            row_futur: list = data["row_futur"]
-
-            liste_ele = qs_parent.takeRow(row_futur)
-            qs_parent.insertRow(row_actuel, liste_ele)
-
-            self.catalog_select_action([qs_parent.child(row_actuel, col_cat_value)])
-
-            self.redo_action_end(id_action)
-
-            return
-
-        # -------------------------
-        # Re-placer Material
-        # -------------------------
-
-        if type_action == deplacer_material:
-
-            qs_parent = data["qs_parent"]
-            qs_new_list = data["qs_new_list"]
-
-            if not isinstance(qs_parent, Folder) or not isinstance(qs_new_list, list):
+            if len(value_list) != 2:
+                print("catalog_manage -- history_modify_attribute -- len(value_list) != 2")
                 return
 
-            if len(qs_new_list) != qs_parent.columnCount():
+            value_current, value_new = value_list
+
+            if not isinstance(value_current, str) or not isinstance(value_new, str):
+                print("catalog_manage -- history_modify_attribute -- not isinstance(value_current, str)")
                 return
 
-            qs_folder_new = qs_new_list[0]
+            if value_current == "":
+                value_current = empty_txt
 
-            if not isinstance(qs_folder_new, Folder):
-                return
+            if value_new == "":
+                value_new = empty_txt
 
-            attributes_list = qs_folder_new.get_attribute_numbers_list()
-            attributes_count = len(attributes_list)
+            tooltips_list.append(f"     {value_current} --> {value_new}")
 
-            parent_child_count = qs_parent.rowCount()
+        if attribute_type == "":
+            title = self.tr("modification")
+        else:
+            title = self.tr("modification attribut")
+            number = attribute_type
 
-            for row_index in reversed(range(parent_child_count)):
+        action_name = f"[{parent_name}] {title} : {number}"
 
-                child_qs_current = qs_parent.child(row_index, 0)
+        tooltips = f'{action_name}\n{"\n".join(tooltips_list)}'
 
-                if not isinstance(child_qs_current, Material):
-                    continue
+        self.undo_list.action_modify_attribute(action_name=action_name,
+                                               tooltips=tooltips,
+                                               guid_parent=guid_parent,
+                                               attribute_data=attribute_data)
 
-                material_qs_list = qs_parent.takeRow(row_index)
+        self.redo_clear()
+        self.undo_button_manage()
 
-                if len(material_qs_list) != qs_parent.columnCount():
-                    continue
+    def history_library_synchro(self):
 
-                qs_folder_new.insertRow(attributes_count, material_qs_list)
-
-            qs_parent.appendRow(qs_new_list)
-
-            self.catalog_expand_action(expanded_list=[qs_folder_new])
-            self.catalog_select_action(selected_list=[qs_folder_new])
-
-            self.redo_action_end(id_action)
-
+        if len(self.library_synchro_list) == 0:
             return
 
+        self.undo_list.action_library_synchro(action_name=self.tr("Synchronisation"),
+                                              library_synchro_list=self.library_synchro_list)
+
+        self.redo_clear()
+        self.undo_button_manage()
+
+    @staticmethod
+    def a___________________undo_action___________________():
+        pass
+
+    def history_pressed(self, action_current: ActionInfo, undo=True) -> bool:
+
+        # =========================
+        # Add Item
+        # =========================
+
+        if isinstance(action_current, ActionAddEle):
+            if undo:
+                return self.action_add_ele(action_current=action_current, undo=undo)
+
+            return self.action_del_ele(action_current=action_current, undo=undo)
+
+        # =========================
+        # Delete Item
+        # =========================
+
+        if isinstance(action_current, ActionDelEle):
+            if undo:
+                return self.action_del_ele(action_current=action_current, undo=undo)
+
+            return self.action_add_ele(action_current=action_current, undo=undo)
+
+        # =========================
+        # Cut Item
+        # =========================
+
+        if isinstance(action_current, ActionCutEle):
+            return self.action_cut_ele(action_current=action_current, undo=undo)
+
+        # =========================
+        # Move Item
+        # =========================
+
+        if isinstance(action_current, ActionMoveEle):
+            return self.action_move_ele(action_current=action_current, undo=undo)
+
+        # =========================
+        # Move Material
+        # =========================
+
+        if isinstance(action_current, ActionMoveMaterial):
+            return self.action_move_material(action_current=action_current, undo=undo)
+
+        # =========================
+        # Change Icon
+        # =========================
+
+        if isinstance(action_current, ActionChangeIcon):
+            return self.action_change_icon(action_current=action_current, undo=undo)
+
+        # =========================
+        # Add attribute
+        # =========================
+
+        if isinstance(action_current, ActionAddAttribute):
+            if undo:
+                return self.action_add_attribute(action_current=action_current, undo=undo)
+
+            return self.action_del_attribute(action_current=action_current, undo=undo)
+
+        # =========================
+        # Delete attribute
+        # =========================
+
+        if isinstance(action_current, ActionDelAttribute):
+            if undo:
+                return self.action_del_attribute(action_current=action_current, undo=undo)
+
+            return self.action_add_attribute(action_current=action_current, undo=undo)
+
+        # =========================
+        # Modify attribute
+        # =========================
+
+        if isinstance(action_current, ActionModifyAttribute):
+            return self.action_modify_attribute(action_current=action_current, undo=undo)
+
+        # =========================
+        # Cut attribute
+        # =========================
+
+        if isinstance(action_current, ActionCutAttribute):
+            return self.action_cut_attribute(action_current=action_current, undo=undo)
+
         # -------------------------
-        # Modifier icône
+        # Library synchonization
         # -------------------------
 
-        if type_action == modif_icone:
-            qs_actuel: MyQstandardItem = data["qs_actuel"]
-            nouvel_icone = data["nouvel_icone"]
+        if isinstance(action_current, ActionLibrarySynchro):
+            return self.action_library_synchro(action_current=action_current, undo=undo)
 
-            qs_actuel.icon_path = nouvel_icone
-            qs_actuel.setIcon(get_icon(nouvel_icone))
+        print("catalog_manage -- history_pressed -- unknow action")
+        return False
 
-            self.catalog_select_action([qs_actuel])
+    @staticmethod
+    def a___________________undo_action_element___________________():
+        pass
 
-            self.redo_action_end(id_action)
+    def action_add_ele(self, action_current: ActionAddEle, undo: bool) -> bool:
 
-            return
+        # ----------
 
-        if type_action == ajouter_attr:
+        qs_current = self.guid_get_qs(guid=action_current.guid_current)
 
-            qs_parent: QStandardItem = data["qs_parent"]
-            index_attribut: int = data["index_attribut"]
-            liste_ele: list = data["liste_ele"]
-            dict_comp: dict = data["dict_comp"]
+        if not isinstance(qs_current, (Folder, Material, Component, Link)):
+            print("catalog_manage -- action_add_ele -- not isinstance(qs_current, MyQstandardItem)")
+            return False
 
-            if len(dict_comp) != 0:
-                for index_ele, liste_ele in dict_comp.items():
-                    qs_parent.insertRow(index_ele, liste_ele)
+        # ----------
+
+        row_current = qs_current.row()
+
+        if row_current == -1:
+            print("catalog_manage -- action_add_ele -- row_current == -1")
+            return False
+
+        # ----------
+
+        qs_parent = qs_current.parent()
+
+        if not isinstance(qs_parent, QStandardItem):
+            print("catalog_manage -- action_add_ele -- not isinstance(qs_parent, QStandardItem)")
+            return False
+
+        # ----------
+
+        if not self.material_delete(qs=qs_current):
+            print("catalog_manage -- action_add_ele -- not self.material_delete(qs=qs_current)")
+            return False
+
+        # ----------
+
+        qs_list = qs_parent.takeRow(row_current)
+
+        if not isinstance(qs_list, list):
+            print("catalog_manage -- action_add_ele -- not isinstance(qs_list, list)")
+            return False
+
+        if len(qs_list) != col_cat_count:
+            print("catalog_manage -- action_add_ele -- len(liste_ele) != column_count")
+            return False
+
+        action_current.guid_parent = qs_parent.data(user_guid)
+        action_current.row_current = row_current
+        action_current.qs_list = qs_list
+
+        # ----------
+
+        last_item = qs_parent.rowCount()
+
+        if isinstance(qs_parent, MyQstandardItem):
+            attributes_list = qs_parent.get_attribute_numbers_list()
+            first_item = len(attributes_list)
+        else:
+            first_item = 0
+
+        if last_item == first_item:
+
+            self.hierarchy.select_list(selected_list=[qs_parent], expand=True)
+
+        else:
+
+            if row_current < first_item:
+                row_current = first_item
+
+            elif row_current >= last_item:
+
+                if last_item > first_item:
+                    row_current = last_item - 1
+                else:
+                    row_current = first_item
+
+            qs_selection = qs_parent.child(row_current, col_cat_value)
+
+            if not isinstance(qs_selection, MyQstandardItem):
+                print("catalog -- action_add_ele -- not isinstance(qs_selection, MyQstandardItem)")
             else:
+                self.hierarchy.select_list(selected_list=[qs_selection], expand=True)
 
-                qs_parent.insertRow(index_attribut, liste_ele)
+        # ----------
 
-            self.catalog_select_action([qs_parent])
+        if undo:
+            return self.undo_action_end(action_id=action_current.action_id)
 
-            self.redo_action_end(id_action)
+        return self.redo_action_end(action_id=action_current.action_id)
 
-            return
+    # ==========================================================================================
 
-        if type_action == modifier_attr:
+    def action_del_ele(self, action_current: ActionDelEle, undo: bool) -> bool:
 
-            qs_parent: QStandardItem = data["qs_parent"]
-            dict_comp: dict = data["dict_comp"]
+        qs_parent = self.guid_get_qs(guid=action_current.guid_parent)
 
-            if qs_parent is None:
-                return
+        if not isinstance(qs_parent, QStandardItem):
+            print("catalog_manage -- action_del_ele -- not isinstance(qs_parent, QStandardItem)")
+            return False
 
-            if dict_comp is None:
-                dict_comp = dict()
+        # ----------
 
-            # Modification des attributs complémentaires
+        qs_list = action_current.qs_list
 
-            if len(dict_comp) != 0:
-                for dict_datas in dict_comp.values():
+        if not isinstance(qs_list, list):
+            print("catalog_manage -- action_del_ele -- not isinstance(qs_list, list)")
+            return False
 
-                    dict_datas: dict
+        if len(qs_list) != col_cat_count:
+            print("catalog_manage -- action_del_ele -- len(qs_list) != column_count")
+            return False
 
-                    numero_comp = dict_datas["numero"]
-                    val_o_comp = dict_datas["valeur_originale"]
-                    val_f_comp = dict_datas["nouveau_texte"]
-                    ind_o_comp = dict_datas["ancien_index"]
-                    ind_f_comp = dict_datas["nouvel_index"]
+        # ----------
 
-                    if val_o_comp == val_f_comp and ind_o_comp == ind_f_comp:
-                        continue
+        row_current = action_current.row_current
 
-                    recherche = qs_parent.recherche_numero(numero_comp)
+        if not isinstance(row_current, int):
+            print("catalog_manage -- action_del_ele -- not isinstance(row_current, int)")
+            return False
 
-                    qs_val_comp = recherche[0]
+        if row_current == -1:
+            print("catalog_manage -- action_del_ele -- row_current == -1")
+            return False
 
-                    if val_o_comp != val_f_comp:
-                        if not isinstance(qs_val_comp, MyQstandardItem):
-                            continue
+        # ----------
 
-                        qs_val_comp.setText(val_f_comp)
+        qs_parent.insertRow(row_current, qs_list)
 
-                    qs_ind_comp = recherche[1]
+        # ----------
 
-                    if ind_o_comp != ind_f_comp:
+        qs_selection = qs_list[col_cat_value]
 
-                        if not isinstance(qs_ind_comp, MyQstandardItem):
-                            continue
+        if not isinstance(qs_selection, MyQstandardItem):
+            print("catalog_manage -- action_del_ele -- not isinstance(qs_selection, MyQstandardItem)")
+            return False
 
-                        qs_ind_comp.setText(ind_f_comp)
+        self.material_add(qs_selection)
 
-            # Modification de l'attribut principal
+        self.hierarchy.select_list(selected_list=[qs_selection], expand=True)
 
-            liste_ele: list = data["liste_ele"]
+        # ----------
 
-            ancienne_valeur: str = data["ancienne_valeur"]
-            nouvelle_valeur: str = data["nouvelle_valeur"]
-            ancien_index: str = data["ancien_index"]
-            nouvel_index: str = data["nouvel_index"]
+        if undo:
+            return self.undo_action_end(action_id=action_current.action_id)
 
-            qs_numero: QStandardItem = liste_ele[col_cat_number]
+        return self.redo_action_end(action_id=action_current.action_id)
 
-            if qs_numero is not None:
+    # ==========================================================================================
 
-                numero = qs_numero.text()
+    def action_move_ele(self, action_current: ActionMoveEle, undo: bool) -> bool:
 
-                if numero == attribute_default_base and isinstance(qs_parent, Material):
-                    self.material_code_renamed(code_before=ancienne_valeur,
-                                               code_after=nouvelle_valeur)
+        qs_current = self.guid_get_qs(guid=action_current.guid_current)
 
-                if numero == "207":
+        if not isinstance(qs_current, MyQstandardItem):
+            print("catalog_manage -- action_move_ele -- not isinstance(qs_actuel, QStandardItem)")
+            return False
 
-                    index_207: int = qs_parent.row()
-                    qs_parent_207: QStandardItem = qs_parent.parent()
+        # ----------
 
-                    if qs_parent_207 is None:
-                        qs_parent_207 = self.cat_model.invisibleRootItem()
+        row_current = qs_current.row()
 
-                    qs_desc = qs_parent_207.child(index_207, col_cat_desc)
+        if not isinstance(row_current, int):
+            print("catalog_manage -- action_move_ele -- not isinstance(row_current, int)")
+            return False
 
-                    if isinstance(qs_desc, Info):
+        # ----------
 
-                        valeur_actuel = qs_desc.text()
+        qs_parent = qs_current.parent()
 
-                        if valeur_actuel == ancienne_valeur and valeur_actuel != nouvelle_valeur:
-                            qs_desc.setText(nouvelle_valeur)
+        if not isinstance(qs_parent, QStandardItem):
+            print("catalog_manage -- action_move_ele -- not isinstance(qs_parent, QStandardItem)")
+            return False
 
-            qs_val: QStandardItem = liste_ele[col_cat_value]
+        # ----------
 
-            if qs_val is not None:
-                valeur_actuel = qs_val.text()
+        row_new = action_current.row_new
 
-                if valeur_actuel == ancienne_valeur and valeur_actuel != nouvelle_valeur:
-                    qs_val.setText(nouvelle_valeur)
+        if row_new == -1 or row_new == row_current:
+            print("catalog_manage -- action_move_ele -- row_new == -1")
+            return False
 
-            qs_index: QStandardItem = liste_ele[col_cat_index]
+        if row_new == row_current:
+            print("catalog_manage -- action_move_ele -- row_new == row_current")
+            return False
 
-            if qs_index is not None:
-                index_actuel = qs_index.text()
+        # ----------
 
-                if index_actuel == ancien_index and index_actuel != nouvel_index:
-                    qs_index.setText(nouvel_index)
+        qs_list = qs_parent.takeRow(row_current)
 
-            self.catalog_select_action([qs_parent])
+        if not isinstance(qs_list, list):
+            print("catalog_manage -- action_move_ele -- not isinstance(liste_ele, list)")
+            return False
 
-            self.redo_action_end(id_action)
-            return
+        if len(qs_list) != col_cat_count:
+            print("catalog_manage -- action_move_ele -- len(liste_ele) != column_count")
+            return False
 
-        if type_action == supprimer_attr:
-            qs_parent: QStandardItem = data["qs_parent"]
-            index_attribut: int = data["index_attribut"]
+        qs_parent.insertRow(row_new, qs_list)
 
-            qs_parent.takeRow(index_attribut)
+        # ----------
 
-            self.catalog_select_action([qs_parent])
+        action_current.row_new = row_current
 
-            self.redo_action_end(id_action)
+        # ----------
 
-            return
+        qs_current = qs_list[col_cat_value]
 
-        # -------------------------
-        # Description Update
-        # -------------------------
+        if not isinstance(qs_current, MyQstandardItem):
+            print("catalog_manage -- action_move_ele -- not isinstance(qs_actuel, MyQstandardItem)")
+            return False
 
-        if type_action == library_synchro_code:
+        self.hierarchy.select_list(selected_list=[qs_current], expand=True)
 
-            qs_parent = QStandardItem()
+        # ----------
 
-            library_synchro_list = data["library_synchro_list"]
+        if undo:
+            return self.undo_action_end(action_id=action_current.action_id)
 
-            if not isinstance(library_synchro_list, list):
-                return
+        return self.redo_action_end(action_id=action_current.action_id)
 
-            for datas in library_synchro_list:
+    # ==========================================================================================
 
-                if not isinstance(datas, dict):
+    def action_cut_ele(self, action_current: ActionCutEle, undo: bool) -> bool:
+
+        qs_current = self.guid_get_qs(guid=action_current.guid_current)
+
+        if not isinstance(qs_current, (Folder, Material, Component, Link)):
+            print("catalog_manage -- action_cut_ele -- not isinstance(qs_current, MyQstandardItem)")
+            return False
+
+        qs_parent_current = qs_current.parent()
+
+        if not isinstance(qs_parent_current, QStandardItem):
+            print("catalog_manage -- action_cut_ele -- not isinstance(qs_parent_current, QStandardItem)")
+            return False
+
+        row_current = qs_current.row()
+
+        if not isinstance(row_current, int):
+            print("catalog_manage -- action_cut_ele -- not isinstance(row_current, int)")
+            return False
+
+        if row_current == -1:
+            print("catalog_manage -- action_cut_ele -- row_current == -1")
+            return False
+
+        # ----------
+
+        qs_parent_new = self.guid_get_qs(guid=action_current.guid_parent_new)
+
+        if not isinstance(qs_parent_new, QStandardItem):
+            print("catalog_manage -- action_cut_ele -- not isinstance(qs_parent_new, QStandardItem)")
+            return False
+
+        # ----------
+
+        qs_list = qs_parent_current.takeRow(row_current)
+
+        if not isinstance(qs_list, list):
+            print("catalog -- action_cut_ele -- not isinstance(liste_ele, list)")
+            return False
+
+        if len(qs_list) != col_cat_count:
+            print("catalog -- action_cut_ele -- len(liste_ele) != column_count")
+            return False
+
+        # ----------
+
+        row_new = action_current.row_new
+
+        if row_new == -1:
+            print("catalog_manage -- action_cut_ele -- row_new == -1")
+            return False
+
+        qs_parent_new.insertRow(row_new, qs_list)
+
+        action_current.guid_parent_new = qs_parent_current.data(user_guid)
+        action_current.row_new = row_current
+
+        # ----------
+
+        qs_selection = qs_list[col_cat_value]
+
+        if not isinstance(qs_selection, MyQstandardItem):
+            print("catalog -- action_cut_ele -- not isinstance(qs_selection, MyQstandardItem)")
+            return False
+
+        self.hierarchy.select_list(selected_list=[qs_selection], expand=True)
+
+        # ----------
+
+        if undo:
+            return self.undo_action_end(action_id=action_current.action_id)
+
+        return self.redo_action_end(action_id=action_current.action_id)
+
+    def action_change_icon(self, action_current: ActionChangeIcon, undo: bool) -> bool:
+
+        qs_current = self.guid_get_qs(guid=action_current.guid_current)
+
+        if not isinstance(qs_current, Folder):
+            print("catalog_manage -- action_change_icon -- not isinstance(qs_actuel, Folder)")
+            return False
+
+        # ----------
+
+        icon_new = action_current.icon_new
+
+        if not isinstance(icon_new, QIcon):
+            print("catalog_manage -- action_change_icon -- not isinstance(icon_new, QIcon)")
+            return False
+
+        # ----------
+
+        icon_current = qs_current.icon()
+
+        if not isinstance(icon_current, QIcon):
+            print("catalog_manage -- action_change_icon -- not isinstance(icon_current, QIcon)")
+            return False
+
+        # ----------
+
+        qs_current.setIcon(icon_new)
+
+        action_current.icon_new = icon_current
+
+        # ----------
+
+        qs_select = self.hierarchy.get_current_qs()
+
+        if qs_select == qs_current:
+            self.hierarchy.select_list(selected_list=[qs_select])
+
+        # ----------
+
+        if undo:
+            return self.undo_action_end(action_id=action_current.action_id)
+
+        return self.redo_action_end(action_id=action_current.action_id)
+
+    def action_move_material(self, action_current: ActionMoveMaterial, undo: bool) -> bool:
+
+        guid_parent = action_current.guid_parent
+
+        if not isinstance(guid_parent, str):
+            print("catalog_manage -- undo_move_material_action -- not isinstance(guid_parent, str)")
+            return False
+
+        # ----------
+
+        qs_parent = self.guid_get_qs(guid_parent)
+
+        if not isinstance(qs_parent, Folder):
+            print("catalog_manage -- undo_move_material_action -- not isinstance(qs_parent, Folder)")
+            return False
+
+        # ----------
+
+        guid_material = action_current.guid_material
+
+        if not isinstance(guid_material, str):
+            print("catalog_manage -- undo_move_material_action -- not isinstance(guid_material, str)")
+            return False
+
+        # ----------
+
+        if undo:
+
+            qs_material = self.guid_get_qs(guid_material, parent=guid_parent)
+
+            if not isinstance(qs_material, Material):
+                print("catalog_manage -- undo_move_material_action -- not isinstance(qs_material, Material)")
+                return False
+
+            # ----------
+
+            qs_new_folder = qs_material.parent()
+
+            if not isinstance(qs_new_folder, Folder):
+                print("catalog_manage -- undo_move_material_action -- not isinstance(qs_new_folder, Folder)")
+                return False
+
+            # ----------
+
+            row_new_folder = qs_new_folder.row()
+
+            row_new_material = row_new_folder + 1
+
+            # ----------
+
+            row_count = qs_new_folder.rowCount()
+
+            for row_index in reversed(range(row_count)):
+
+                qs_material = qs_new_folder.child(row_index, col_cat_value)
+
+                if not isinstance(qs_material, Material):
                     continue
 
-                is_creation = datas.get("creation", False)
+                qs_list = qs_new_folder.takeRow(row_index)
 
-                # ------------
-                # Création
-                # ------------
+                if not isinstance(qs_list, list):
+                    print("catalog_manage -- undo_move_material_action -- not isinstance(qs_list, list)")
+                    return False
 
-                if is_creation:
+                if len(qs_list) != col_cat_count:
+                    print("catalog_manage -- undo_move_material_action -- len(qs_list) != col_cat_count")
+                    return False
 
-                    qs_parent = datas.get("qs_parent")
+                qs_parent.insertRow(row_new_material, qs_list)
 
-                    if not isinstance(qs_parent, (Material, Component)):
-                        continue
+            qs_list = qs_parent.takeRow(row_new_folder)
 
-                    index_attribut = datas.get("index_attribut")
+            if not isinstance(qs_list, list):
+                print("catalog_manage -- undo_move_material_action -- not isinstance(qs_list, list)")
+                return False
 
-                    if not isinstance(index_attribut, int):
-                        continue
+            if len(qs_list) != col_cat_count:
+                print("catalog_manage -- undo_move_material_action -- len(qs_list) != col_cat_count")
+                return False
 
-                    if index_attribut < 0:
-                        continue
+            # ----------
 
-                    liste_ele = datas.get("liste_ele")
+            self.hierarchy.select_list(selected_list=[qs_parent])
 
-                    if not isinstance(liste_ele, list):
-                        continue
+            # ----------
 
-                    qs_parent.appendRow(liste_ele)
+            return self.undo_action_end(action_id=action_current.action_id)
+
+        # ---------------
+        # REDO
+        # ---------------
+
+        qs_material = self.guid_get_qs(guid_material, parent=guid_parent)
+
+        if not isinstance(qs_material, Material):
+            print("catalog_manage -- undo_move_material_action -- not isinstance(qs_material, Material)")
+            return False
+
+        # ---------------
+
+        guid_new_folder = action_current.guid_new_folder
+
+        if not isinstance(guid_new_folder, str):
+            print("catalog_manage -- undo_move_material_action -- not isinstance(guid_new_folder, str)")
+            return False
+
+        # ---------------
+
+        if not self.material_to_new_folder_action(qs_material_list=[qs_material], guid_new_folder=guid_new_folder):
+            print("catalog_manage -- undo_move_material_action -- "
+                  "not self.material_to_new_folder_action(qs_material_list=qs_material_list)")
+            return False
+
+        # ----------
+
+        return self.redo_action_end(action_id=action_current.action_id)
+
+    @staticmethod
+    def a___________________undo_action_attribute___________________():
+        pass
+
+    def action_add_attribute(self, action_current: ActionAddAttribute, undo: bool) -> bool:
+
+        qs_parent = self.guid_get_qs(guid=action_current.guid_parent)
+
+        if not isinstance(qs_parent, QStandardItem):
+            print("catalog_manage -- action_add_attribute -- not isinstance(qs_parent, QStandardItem)")
+            return False
+
+        attribute_data = action_current.attribute_data
+
+        if not isinstance(attribute_data, list):
+            print("catalog_manage -- action_add_attribute -- not isinstance(attribute_data, list)")
+            return False
+
+        if len(attribute_data) == 0:
+            print("catalog_manage -- action_add_attribute -- len(attribute_data) == 0")
+            return False
+
+        for data in reversed(attribute_data):
+
+            if not isinstance(data, AttributeData):
+                print("catalog_manage -- action_add_attribute -- not isinstance(data, AttributeData)")
+                return False
+
+            # ----------
+
+            guid_code = data.guid_current
+
+            if not isinstance(guid_code, str):
+                print("catalog_manage -- action_add_attribute -- not isinstance(guid_code, str)")
+                return False
+
+            # ----------
+
+            qs_current = self.guid_get_qs(guid=guid_code, parent=qs_parent.index())
+
+            if not isinstance(qs_current, Attribute):
+                print("catalog_manage -- action_add_attribute -- not isinstance(qs_current, Attribute)")
+                return False
+
+            # ----------
+
+            row_current = qs_current.row()
+
+            if row_current == -1:
+                print("catalog_manage -- action_add_attribute -- row_current == -1")
+                return False
+
+            # ----------
+
+            qs_list = qs_parent.takeRow(row_current)
+
+            if not isinstance(qs_list, list):
+                print("catalog_manage -- action_add_attribute -- not isinstance(qs_list, list)")
+                return False
+
+            if len(qs_list) != col_cat_count:
+                print("catalog_manage -- action_add_attribute -- len(liste_ele) != column_count")
+                return False
+
+            data.row_current = row_current
+            data.qs_list = qs_list
+
+        # ----------
+
+        if isinstance(qs_parent, (Material, Component)):
+            self.hierarchy.select_list(selected_list=[qs_parent], expand=True)
+
+        else:
+
+            print("catalog_manage -- action_add_attribute -- isinstance(qs_parent, (Material, Component))")
+            return False
+
+        # ----------
+
+        if undo:
+            return self.undo_action_end(action_id=action_current.action_id)
+
+        return self.redo_action_end(action_id=action_current.action_id)
+
+    def action_del_attribute(self, action_current: ActionDelAttribute, undo: bool) -> bool:
+
+        qs_parent = self.guid_get_qs(guid=action_current.guid_parent)
+
+        if not isinstance(qs_parent, QStandardItem):
+            print("catalog_manage -- action_del_attribute -- not isinstance(qs_parent, QStandardItem)")
+            return False
+
+        attribute_data = action_current.attribute_data
+
+        if not isinstance(attribute_data, list):
+            print("catalog_manage -- action_del_attribute -- not isinstance(attribute_data, list)")
+            return False
+
+        if len(attribute_data) == 0:
+            print("catalog_manage -- action_del_attribute -- len(attribute_data) == 0")
+            return False
+
+        try:
+
+            attribute_data.sort(key=lambda x: x.row_current)
+
+        except Exception as error:
+            print(f"catalog_manage -- action_del_attribute -- error : {error}")
+            return False
+
+        for data in attribute_data:
+
+            if not isinstance(data, AttributeData):
+                print("catalog_manage -- action_del_attribute -- not isinstance(data, AttributeData)")
+                return False
+
+            row_current: int = data.row_current
+
+            if not isinstance(row_current, int):
+                print("catalog_manage -- action_del_attribute -- not isinstance(row_current, int)")
+                return False
+
+            qs_list: list = data.qs_list
+
+            if not isinstance(qs_list, list):
+                print("catalog_manage -- undo_del_attribute_action -- not isinstance(qs_list, list)")
+                return False
+
+            if len(qs_list) != col_cat_count:
+                print("catalog_manage -- undo_del_attribute_action -- len(qs_list) != column_count")
+                return False
+
+            qs_parent.insertRow(row_current, qs_list)
+
+        # ----------
+
+        self.hierarchy.select_list(selected_list=[qs_parent])
+
+        # ----------
+
+        if undo:
+            return self.undo_action_end(action_id=action_current.action_id)
+
+        return self.redo_action_end(action_id=action_current.action_id)
+
+    def action_cut_attribute(self, action_current: ActionCutAttribute, undo: bool) -> bool:
+
+        qs_parent_original = self.guid_get_qs(guid=action_current.guid_parent_original)
+
+        qs_selection = None
+
+        if not isinstance(qs_parent_original, (Folder, Material, Component)):
+            print("catalog_manage -- action_cut_attribute -- not isinstance(qs_parent_original, MyQstandardItem)")
+            return False
+
+        # ----------
+
+        qs_parent_select = self.guid_get_qs(guid=action_current.guid_parent_select)
+
+        if not isinstance(qs_parent_select, (Folder, Material, Component)):
+            print("catalog_manage -- action_cut_attribute -- not isinstance(qs_parent_select, MyQstandardItem)")
+            return False
+
+        # ----------
+
+        attribute_data = action_current.attribute_data
+
+        if not isinstance(attribute_data, list):
+            print("catalog_manage -- action_cut_attribute -- not isinstance(attribute_data, list)")
+            return False
+
+        if len(attribute_data) == 0:
+            print("catalog_manage -- action_cut_attribute -- len(attribute_data) == 0")
+            return False
+
+        if undo:
+            attribute_data = list(attribute_data)
+            attribute_data.reverse()
+        # ----------
+
+        for data in attribute_data:
+
+            if not isinstance(data, AttributeCutData):
+                print("catalog_manage -- action_cut_attribute -- not isinstance(data, AttributeCutData)")
+                return False
+
+            # ----------
+
+            number_current = data.number_current
+
+            if not isinstance(number_current, str):
+                print("catalog_manage -- action_cut_attribute -- not isinstance(number_current, str)")
+                return False
+
+            # ----------
+
+            attribute_delete = data.attribute_delete
+
+            # ----------
+            # UNDO --> selection -> Original
+            # ----------
+
+            if undo:
+
+                # ----------
+
+                row_original = data.row_original
+
+                if row_original == -1:
+                    print("catalog_manage -- action_cut_attribute -- row_original == -1")
+                    return False
+
+                # ----------
+
+                row_select = qs_parent_select.get_row_attribute_by_number(number=number_current)
+
+                if row_select == -1:
+                    print("catalog_manage -- action_cut_attribute -- row_select == -1:")
+                    return False
+
+                data.row_select = row_select
+
+                # ----------
+
+                qs_list_original = data.qs_list_original
+
+                if not isinstance(qs_list_original, list):
+                    print("catalog_manage -- action_cut_attribute -- not isinstance(qs_list_original, list)")
+                    return False
+
+                if len(qs_list_original) != col_cat_count:
+                    print("catalog_manage -- action_cut_attribute --len(qs_list_original) != col_cat_count")
+                    return False
+
+                # ---------- attribute doesn't exist in the selection -> move only
+
+                if attribute_delete:
+
+                    qs_list_select = qs_parent_select.takeRow(row_select)
+
+                    # ----------
+
+                    if not isinstance(qs_list_select, list):
+                        print("catalog_manage -- action_cut_attribute -- not isinstance(qs_list_select, list)")
+                        return False
+
+                    if len(qs_list_select) != col_cat_count:
+                        print("catalog_manage -- action_cut_attribute --len(qs_list_select) != col_cat_count")
+                        return False
+
+                    # ----------
+
+                    data.qs_list_select = qs_list_select
+
+                    data.row_original = qs_parent_original.get_attribute_insertion_index(number=number_current)
+
+                    qs_parent_original.insertRow(data.row_original, qs_list_original)
+
+                    qs_selection = qs_parent_original
+                    # ----------
 
                     continue
 
-                # ------------
-                # Update
-                # ------------
+                # ---------- attribute exists in the selection -> restore values
 
-                if not isinstance(datas, dict):
-                    continue
+                qs_value_select = qs_parent_select.child(row_select, col_cat_value)
 
-                qs_value = datas.get("qs_value")
+                if not isinstance(qs_value_select, Attribute):
+                    print("catalog_manage -- action_cut_attribute -- not isinstance(qs_value_select, Attribute)")
+                    return False
 
-                if not isinstance(qs_value, Attribute):
-                    continue
+                # ----------
 
-                value_after = datas.get("value_after")
+                qs_value_index_select = qs_parent_select.child(row_select, col_cat_index)
 
-                if not isinstance(value_after, str):
-                    continue
+                if not isinstance(qs_value_index_select, Info):
+                    print("catalog_manage -- action_cut_attribute -- not isinstance(qs_value_index_select, Info)")
+                    return False
 
-                # ------------
+                # ----------
 
-                qs_index_value = datas.get("qs_index_value")
+                value_select = data.value_select
 
-                if not isinstance(qs_index_value, Attribute):
-                    continue
+                if not isinstance(value_select, str):
+                    print("catalog_manage -- action_cut_attribute -- not isinstance(value_select, str)")
+                    return False
 
-                index_value_after = datas.get("index_value_after")
+                # ----------
 
-                if not isinstance(index_value_after, str):
-                    continue
+                value_index_select = data.value_index_select
 
-                # ------------
+                if not isinstance(value_index_select, str):
+                    print("catalog_manage -- action_cut_attribute -- not isinstance(value_index_select, str)")
+                    return False
 
-                qs_value.setText(value_after)
+                # ----------
 
-                qs_index_value.setText(index_value_after)
+                guid_select = data.guid_select
 
-                # ------------
+                if not isinstance(guid_select, str):
+                    print("catalog_manage -- action_cut_attribute -- not isinstance(guid_select, str)")
+                    return False
 
-                qs_desc = datas.get("qs_desc")
+                # ----------
 
-                if isinstance(qs_desc, Info):
-                    qs_desc.setText(value_after)
+                qs_value_select.setData(guid_select, user_guid)
+                qs_value_select.setText(value_select)
+                qs_value_index_select.setText(value_index_select)
 
-            self.redo_action_end(id_action)
+                # ----------
+
+                data.row_original = qs_parent_original.get_attribute_insertion_index(number=number_current)
+
+                qs_parent_original.insertRow(data.row_original, qs_list_original)
+
+                qs_selection = qs_parent_original
+                # ----------
+
+                continue
+
+            # ----------
+            # Redo --> Original -> selection
+            # ----------
+
+            row_original = qs_parent_original.get_row_attribute_by_number(number=number_current)
+
+            if row_original == -1:
+                print("catalog_manage -- action_cut_attribute -- row_original == -1")
+                return False
+
+            # ---------- attribute doesn't exist in the selection -> move only
+
+            if attribute_delete:
+
+                qs_list_original = qs_parent_original.takeRow(row_original)
+
+                # ----------
+
+                if not isinstance(qs_list_original, list):
+                    print("catalog_manage -- action_cut_attribute -- not isinstance(qs_list_original, list)")
+                    return False
+
+                if len(qs_list_original) != col_cat_count:
+                    print("catalog_manage -- action_cut_attribute --len(qs_list_original) != col_cat_count")
+                    return False
+
+                # ----------
+
+                qs_list_select = data.qs_list_select
+
+                # ----------
+
+                if not isinstance(qs_list_select, list):
+                    print("catalog_manage -- action_cut_attribute -- not isinstance(qs_list_select, list)")
+                    return False
+
+                if len(qs_list_select) != col_cat_count:
+                    print("catalog_manage -- action_cut_attribute --len(qs_list_select) != col_cat_count")
+                    return False
+
+                # ----------
+
+                data.row_select = qs_parent_select.get_attribute_insertion_index(number=number_current)
+
+                # ----------
+
+                qs_parent_select.insertRow(data.row_select, qs_list_select)
+
+                qs_selection = qs_parent_select
+                # ----------
+
+                continue
+
+            # ---------- attribute exists in the selection -> restore values
+
+            row_select = qs_parent_select.get_row_attribute_by_number(number=number_current)
+
+            if row_select == -1:
+                print("catalog_manage -- action_cut_attribute -- row_select == -1:")
+                return False
+
+            data.row_select = row_select
+
+            # ----------
+
+            qs_value_select = qs_parent_select.child(row_select, col_cat_value)
+
+            if not isinstance(qs_value_select, Attribute):
+                print("catalog_manage -- action_cut_attribute -- not isinstance(qs_value_select, Attribute)")
+                return False
+
+            # ----------
+
+            qs_value_index_select = qs_parent_select.child(row_select, col_cat_index)
+
+            if not isinstance(qs_value_index_select, Info):
+                print("catalog_manage -- action_cut_attribute -- not isinstance(qs_value_index_select, Info)")
+                return False
+
+            # ----------
+
+            value_original = data.value_original
+
+            if not isinstance(value_original, str):
+                print("catalog_manage -- action_cut_attribute -- not isinstance(value_original, str)")
+                return False
+
+            # ----------
+
+            value_index_original = data.value_index_original
+
+            if not isinstance(value_index_original, str):
+                print("catalog_manage -- action_cut_attribute -- not isinstance(value_index_original, str)")
+                return False
+
+            # ----------
+
+            guid_original = data.guid_original
+
+            if not isinstance(guid_original, str):
+                print("catalog_manage -- action_cut_attribute -- not isinstance(guid_original, str)")
+                return False
+
+            # ----------
+
+            qs_value_select.setText(value_original)
+            qs_value_select.setData(guid_original, user_guid)
+            qs_value_index_select.setText(value_index_original)
+
+            # ----------
+
+            qs_list_original = qs_parent_original.takeRow(row_original)
+
+            # ----------
+
+            if not isinstance(qs_list_original, list):
+                print("catalog_manage -- action_cut_attribute -- not isinstance(qs_list_original, list)")
+                return False
+
+            if len(qs_list_original) != col_cat_count:
+                print("catalog_manage -- action_cut_attribute --len(qs_list_original) != col_cat_count")
+                return False
+
+            # ----------
+
+            qs_selection = qs_parent_select
+            continue
+
+        # ----------
+
+        if isinstance(qs_selection, MyQstandardItem):
+            self.hierarchy.select_list(selected_list=[qs_selection], scrollto=True, expand=True)
+
+        # ----------
+
+        if undo:
+            return self.undo_action_end(action_id=action_current.action_id)
+
+        return self.redo_action_end(action_id=action_current.action_id)
+
+    def action_modify_attribute(self, action_current: ActionModifyAttribute, undo: bool) -> bool:
+
+        qs_parent = self.guid_get_qs(guid=action_current.guid_parent)
+
+        if not isinstance(qs_parent, MyQstandardItem):
+            print("catalog_manage -- action_modify_attribute -- not isinstance(qs_parent, MyQstandardItem)")
+            return False
+
+        attribute_data = action_current.attribute_data
+
+        if not isinstance(attribute_data, list):
+            print("catalog_manage -- action_modify_attribute -- not isinstance(attribute_data, list)")
+            return False
+
+        if len(attribute_data) == 0:
+            print("catalog_manage -- action_modify_attribute -- len(attribute_data) == 0")
+            return False
+
+        # ----------
+
+        for data in attribute_data:
+
+            if not isinstance(data, AttributeModifyData):
+                print("catalog_manage -- action_modify_attribute -- not isinstance(data, ActionModifyAttribute)")
+                return False
+
+            # ----------
+
+            number_current = data.number_current
+
+            if not isinstance(number_current, str):
+                print("catalog_manage -- action_modify_attribute -- not isinstance(number_current, str)")
+                return False
+
+            # ----------
+
+            value_new = data.value_new
+
+            if not isinstance(value_new, str):
+                print("catalog_manage -- action_modify_attribute -- not isinstance(value_new, str)")
+                return False
+
+            # ----------
+
+            value_index_new = data.value_index_new
+
+            if not isinstance(value_index_new, str):
+                print("catalog_manage -- action_modify_attribute -- not isinstance(value_index_new, str)")
+                return False
+
+            # ----------
+
+            if number_current == attribute_default_base:
+
+                value_current = qs_parent.text()
+
+                if not isinstance(value_current, str):
+                    print("catalog_manage -- action_modify_attribute -- not isinstance(value_current, str)")
+                    return False
+
+                # ----------
+
+                if value_new != value_current:
+
+                    qs_parent.setText(value_new)
+                    data.value_new = value_current
+
+                    # ----------
+
+                    if isinstance(qs_parent, Material):
+                        self.material_code_renamed(code_before=value_current,
+                                                   code_after=value_new)
+
+                    # ----------
+
+                    self.hierarchy.select_list(selected_list=[qs_parent])
+
+                # ----------
+
+                if undo:
+                    return self.undo_action_end(action_id=action_current.action_id)
+
+                return self.redo_action_end(action_id=action_current.action_id)
+
+                # ========================================================================
+
+            qs_list = qs_parent.get_attribute_line_by_number(number=number_current)
+
+            if not isinstance(qs_list, list):
+                print("catalog_manage -- action_modify_attribute -- not isinstance(qs_list, list)")
+                return False
+
+            if len(qs_list) != col_cat_count:
+                print("catalog_manage -- action_modify_attribute -- len(qs_list) != col_cat_count")
+                return False
+
+            # ----------
+
+            qs_value = qs_list[col_cat_value]
+
+            if not isinstance(qs_value, Attribute):
+                print("catalog_manage -- action_modify_attribute -- not isinstance(qs_value, Attribute)")
+                return False
+
+            value_current = qs_value.text()
+
+            if not isinstance(value_current, str):
+                print("catalog_manage -- action_modify_attribute -- not isinstance(value_current, str)")
+                return False
+
+            # ----------
+
+            qs_index = qs_list[col_cat_index]
+
+            if not isinstance(qs_index, Info):
+                print("catalog_manage -- action_modify_attribute -- not isinstance(qs_index, Info)")
+                return False
+
+            value_index_current = qs_index.text()
+
+            if not isinstance(value_index_current, str):
+                print("catalog_manage -- action_modify_attribute -- not isinstance(value_index_current, str)")
+                return False
+
+            # ----------
+
+            if value_new == value_current and value_index_new == value_index_current:
+
+                if undo:
+                    return self.undo_action_end(action_id=action_current.action_id)
+
+                return self.redo_action_end(action_id=action_current.action_id)
+
+            # ----------
+
+            if number_current == "207" and value_new != value_current:
+
+                guid_desc = data.guid_desc
+
+                qs_desc = self.guid_get_qs(guid=guid_desc, column=col_cat_desc)
+
+                if not isinstance(qs_desc, Info):
+                    print("catalog_manage -- action_modify_attribute -- not isinstance(qs_desc, Info)")
+                    return False
+
+                qs_desc.setText(value_new)
+
+            # ----------
+
+            if value_new != value_current:
+                qs_value.setText(value_new)
+                data.value_new = value_current
+
+            if value_index_new != value_index_current:
+                qs_index.setText(value_index_new)
+                data.value_index_new = value_index_current
+
+            # ----------
+
+        self.hierarchy.select_list(selected_list=[qs_parent])
+
+        # ----------
+
+        if undo:
+            return self.undo_action_end(action_id=action_current.action_id)
+
+        return self.redo_action_end(action_id=action_current.action_id)
+
+    def action_library_synchro(self, action_current: ActionLibrarySynchro, undo: bool) -> bool:
+
+        library_synchro_list = action_current.library_synchro_list
+
+        if not isinstance(library_synchro_list, list):
+            print("catalog_manage -- undo_library_synchro -- not isinstance(library_synchro_list, list)")
+            return False
+
+        for data in reversed(library_synchro_list):
+
+            if not isinstance(data, LibraryData):
+                print("catalog_manage -- undo_library_synchro -- not isinstance(datas, LibraryData)")
+                return False
+
+            # ----------
+
+            guid_parent = data.guid_parent
+
+            if not isinstance(guid_parent, str):
+                print("catalog_manage -- undo_library_synchro -- not isinstance(guid_parent, str)")
+                return False
+
+            # ----------
+
+            qs_parent = self.guid_get_qs(guid=guid_parent)
 
             if not isinstance(qs_parent, (Folder, Material, Component)):
-                return
+                print("catalog_manage -- undo_library_synchro -- not isinstance(qs_parent, Folder)")
+                return False
 
-            self.catalog_select_action([qs_parent])
-            return
+            # ----------
 
-    def redo_action_end(self, nom_action: int):
+            guid_current = data.guid_current
 
-        action = self.redo_list.dict_actions.get(nom_action, None)
+            if not isinstance(guid_current, str):
+                print("catalog_manage -- undo_library_synchro -- not isinstance(guid_current, str)")
+                return False
+
+            # ----------
+
+            qs_current = self.guid_get_qs(guid=guid_current, parent=qs_parent.index())
+
+            if not isinstance(qs_current, Attribute):
+                print("catalog_manage -- undo_library_synchro -- not isinstance(qs_current, Attribute)")
+                return False
+
+            # ----------
+
+            row_current = qs_current.row()
+
+            if row_current == -1:
+                print("catalog_manage -- undo_library_synchro -- row_current == -1")
+                return False
+
+            if data.is_creation:
+
+                # ------------
+                # Delete Attribute --> UNDO
+                # ------------
+
+                if undo:
+
+                    qs_list = qs_parent.takeRow(row_current)
+
+                    if not isinstance(qs_list, list):
+                        print("catalog_manage -- undo_library_synchro -- not isinstance(qs_list, list)")
+                        return False
+
+                    if len(qs_list) != col_cat_count:
+                        print("catalog_manage -- undo_library_synchro -- len(qs_list) != col_cat_count")
+                        return False
+
+                    # ----------
+
+                    data.row_current = row_current
+                    data.qs_list = qs_list
+
+                    continue
+
+                # ------------
+                # Add Attribute --> RDO
+                # ------------
+
+                qs_list = data.qs_list
+
+                if not isinstance(qs_list, list):
+                    print("catalog_manage -- redo_library_synchro -- not isinstance(qs_list, list)")
+                    return False
+
+                if len(qs_list) != col_cat_count:
+                    print("catalog_manage -- redo_library_synchro -- len(qs_list) != col_cat_count")
+                    return False
+
+                row_current = data.row_current
+
+                if row_current == -1:
+                    print("catalog_manage -- redo_library_synchro -- row_current == -1")
+                    return False
+
+                qs_parent.insertRow(row_current, qs_list)
+
+                # ----------
+
+                data.row_current = -1
+                data.qs_list = list()
+
+                continue
+
+            # ------------
+            # Update
+            # ------------
+
+            value_current = qs_current.text()
+
+            if not isinstance(value_current, str):
+                print("catalog_manage -- undo_library_synchro -- not isinstance(value_current, str)")
+                return False
+
+            # ------------ update data
+
+            value_new = data.value_new
+
+            if not isinstance(value_new, str):
+                print("catalog_manage -- undo_library_synchro -- not isinstance(value_new, str)")
+                return False
+
+            qs_current.setText(value_new)
+
+            # ------------ copy new data
+
+            data.value_new = value_current
+
+            # ------------ Description (207)
+
+            if isinstance(data.guid_desc, str):
+
+                qs_desc = self.guid_get_qs(guid=data.guid_desc, column=col_cat_desc)
+
+                if not isinstance(qs_desc, Info):
+                    print("catalog_manage -- undo_library_synchro -- not isinstance(qs_desc, Info)")
+                    return False
+
+                qs_desc.setText(value_new)
+
+            # ------------ check if value_index exists
+
+            value_index_new = data.value_index_new
+
+            if not isinstance(value_index_new, str):
+                continue
+
+            qs_value_index = qs_parent.child(row_current, col_cat_index)
+
+            if not isinstance(qs_value_index, Info):
+                print("catalog_manage -- undo_library_synchro -- not isinstance(qs_value_index, Info))")
+                return False
+
+            # ------------
+
+            value_index_current = qs_value_index.text()
+
+            if not isinstance(value_index_current, str):
+                print("catalog_manage -- undo_library_synchro -- not isinstance(value_index_current, str)")
+                return False
+
+            # ------------
+
+            value_index_new = data.value_index_new
+
+            if not isinstance(value_index_new, str):
+                print("catalog_manage -- undo_library_synchro -- not isinstance(value_index_new, str)")
+                return False
+
+            # ------------
+
+            qs_value_index.setText(value_index_new)
+
+            data.value_index_new = value_index_current
+
+            # ------------
+
+        qs_selection = self.hierarchy.get_current_qm_filter()
+
+        if isinstance(qs_selection, QModelIndex):
+            self.hierarchy.select_list(selected_list=[qs_selection])
+
+        # ----------
+
+        if undo:
+            return self.undo_action_end(action_id=action_current.action_id)
+
+        return self.redo_action_end(action_id=action_current.action_id)
+
+    @staticmethod
+    def a___________________undo_action_end___________________():
+        pass
+
+    def undo_action_end(self, action_id: int) -> bool:
+
+        action = self.undo_list.action_dict.get(action_id, None)
 
         if action is None:
-            return
+            print("catalog_manage -- undo_action_end -- action is None")
+            return False
 
-        self.undo_list.dict_actions[nom_action] = action
-        self.redo_list.supprimer_action(nom_action)
+        self.redo_list.action_dict[action_id] = action
+
+        result = self.undo_list.supprimer_action(action_id)
 
         self.undo_button_manage()
         self.redo_button_manage()
 
+        return result
+
+    def undo_button_manage(self):
+        self.ui.undo_bt.setEnabled(len(self.undo_list.action_dict) != 0)
+        self.ui.undo_list_bt.setEnabled(len(self.undo_list.action_dict) != 0)
+
+    @staticmethod
+    def a___________________redo_action_end___________________():
+        pass
+
+    def redo_action_end(self, action_id: int) -> bool:
+
+        action = self.redo_list.action_dict.get(action_id, None)
+
+        if action is None:
+            print("catalog_manage -- redo_action_end -- action is None")
+            return False
+
+        self.undo_list.action_dict[action_id] = action
+
+        result = self.redo_list.supprimer_action(action_id)
+
+        self.undo_button_manage()
+        self.redo_button_manage()
+
+        return result
+
     def redo_clear(self):
 
-        self.redo_list.clear()
+        self.redo_list.action_clear()
         self.redo_button_manage()
 
     def redo_button_manage(self):
-        self.ui.redo_bt.setEnabled(len(self.redo_list.dict_actions) != 0)
-        self.ui.redo_list_bt.setEnabled(len(self.redo_list.dict_actions) != 0)
+
+        self.ui.redo_bt.setEnabled(len(self.redo_list.action_dict) != 0)
+        self.ui.redo_list_bt.setEnabled(len(self.redo_list.action_dict) != 0)
 
     @staticmethod
     def a___________________library_update_description___________________():
@@ -5908,7 +7005,7 @@ class CatalogDatas(QObject):
     def library_synchro(self, code: str, number: str, value: str, index_value: str, item_type: str,
                         creation: bool) -> int:
 
-        search_code = self.cat_model.findItems(code, Qt.MatchExactly | Qt.MatchRecursive, col_cat_value)
+        search_code = self.hierarchy.cat_model.findItems(code, Qt.MatchExactly | Qt.MatchRecursive, col_cat_value)
 
         synchro_count = 0
 
@@ -5937,22 +7034,33 @@ class CatalogDatas(QObject):
                 insertion_index = qs.get_attribute_insertion_index(number=number)
 
                 if not isinstance(insertion_index, int):
+                    print("catalog_manage -- library_synchro -- not isinstance(insertion_index, int)")
                     continue
 
                 if insertion_index < 0:
+                    print("catalog_manage -- library_synchro -- insertion_index < 0")
                     continue
 
                 if index_value != "-1":
-                    qs_list = self.allplan.creation.attribute_line(value=index_value, number=number)
+                    qs_list = self.allplan.creation.attribute_line(value=index_value, number_str=number)
                 else:
-                    qs_list = self.allplan.creation.attribute_line(value=value, number=number)
+                    qs_list = self.allplan.creation.attribute_line(value=value, number_str=number)
+
+                if not isinstance(qs_list, list):
+                    print("catalog_manage -- library_synchro -- not isinstance(qs_list, list)")
+                    continue
 
                 qs.insertRow(insertion_index, qs_list)
 
-                self.library_synchro_list.append({"qs_parent": qs,
-                                                  "index_attribut": insertion_index,
-                                                  "liste_ele": qs_list,
-                                                  "creation": True})
+                qs_value = qs_list[col_cat_value]
+
+                if not isinstance(qs_value, Attribute):
+                    print("catalog_manage -- library_synchro -- not isinstance(qs_value, Attribute)")
+                    continue
+
+                self.library_synchro_list.append(LibraryData(is_creation=True,
+                                                             guid_parent=qs.data(user_guid),
+                                                             guid_current=qs_value.data(user_guid)))
 
                 synchro_count += 1
 
@@ -5963,11 +7071,13 @@ class CatalogDatas(QObject):
             qs_attribute_value = results[col_cat_value]
 
             if not isinstance(qs_attribute_value, Attribute):
+                print("catalog_manage -- library_synchro -- not isinstance(qs_attribute_value, Attribute)")
                 continue
 
             attribute_value = qs_attribute_value.text()
 
             if not isinstance(attribute_value, str):
+                print("catalog_manage -- library_synchro -- not isinstance(attribute_value, str)")
                 continue
 
             if attribute_value == value:
@@ -5975,14 +7085,16 @@ class CatalogDatas(QObject):
 
             # ------------------------------
 
-            qs_index_value = results[col_cat_index]
+            qs_index = results[col_cat_index]
 
-            if not isinstance(qs_index_value, Attribute):
+            if not isinstance(qs_index, Info):
+                print("catalog_manage -- library_synchro -- not isinstance(qs_index_value, Info)")
                 continue
 
-            index_value_before = qs_index_value.text()
+            index_value_before = qs_index.text()
 
             if not isinstance(index_value_before, str):
+                print("catalog_manage -- library_synchro -- not isinstance(index_value_before, str)")
                 continue
 
             # ------------------------------
@@ -5992,50 +7104,50 @@ class CatalogDatas(QObject):
                 qs_parent = qs.parent()
 
                 if not isinstance(qs_parent, MyQstandardItem):
+                    print("catalog_manage -- library_synchro -- not isinstance(qs_parent, MyQstandardItem)")
                     continue
 
                 qs_desc = qs_parent.child(qs.row(), col_cat_desc)
 
                 if not isinstance(qs_desc, Info):
+                    print("catalog_manage -- library_synchro -- not isinstance(qs_desc, Info)")
                     continue
 
                 qs_desc.setText(value)
+                guid_desc = qs_desc.data(user_guid)
 
                 index_value_before = "-1"
 
             else:
-                qs_desc = None
+                guid_desc = None
 
                 # ------------------------------
 
             if index_value_before != index_value:
-                qs_index_value.setText(index_value)
+                qs_index.setText(index_value)
 
             qs_attribute_value.setText(value)
 
             synchro_count += 1
 
-            self.library_synchro_list.append({"qs_parent": qs,
-                                              "qs_value": qs_attribute_value,
-                                              "qs_desc": qs_desc,
-                                              "qs_index_value": qs_index_value,
-                                              "value_before": attribute_value,
-                                              "value_after": value,
-                                              "index_value_before": index_value_before,
-                                              "index_value_after": index_value,
-                                              "creation": False})
+            self.library_synchro_list.append(LibraryData(is_creation=False,
+                                                         guid_parent=qs.data(user_guid),
+                                                         guid_current=qs_attribute_value.data(user_guid),
+                                                         value_new=attribute_value,
+                                                         value_index_new=index_value_before,
+                                                         guid_desc=guid_desc))
 
         return synchro_count
 
     def library_synchro_end(self):
         self.catalog_modif_manage()
 
-        selection_list = self.ui.hierarchy.selectionModel().selectedRows()
+        selection_list = self.hierarchy.selectionModel().selectedRows()
 
         if len(selection_list) == 0:
             return
 
-        self.catalog_select_action(selected_list=selection_list, scrollto=False)
+        self.hierarchy.select_list(selected_list=selection_list, scrollto=False)
 
     @staticmethod
     def a___________________backup_restore___________________():
@@ -6138,22 +7250,10 @@ class CatalogDatas(QObject):
         pass
 
 
-class CatalogLoad(QObject):
-    loading_completed = pyqtSignal(QStandardItemModel, list, list)
-    errors_signal = pyqtSignal(list)
+class CatalogLoad(ConvertTemplate):
 
-    def __init__(self, allplan, file_path: str, bdd_title: str):
-        super().__init__()
-
-        # ---------------------------------------
-        # LOADING PARENTS
-        # ---------------------------------------
-
-        self.allplan: AllplanDatas = allplan
-
-        self.allplan.creation.attributes_datas.clear()
-
-        self.creation = self.allplan.creation
+    def __init__(self, allplan, file_path: str, bdd_title: str, conversion=False):
+        super().__init__(allplan, file_path, bdd_title, conversion)
 
         # ---------------------------------------
         # LOADING VARIABLES
@@ -6162,42 +7262,23 @@ class CatalogLoad(QObject):
 
         self.region = ""
 
-        self.expanded_list = list()
-        self.selected_list = list()
-
         self.link_used_count = dict()
         self.dict_liens_node = dict()
 
-        self.material_list = list()
-        self.material_upper_list = list()
-        self.link_list = list()
-        self.material_with_link_list = list()
-
-        self.file_path = file_path
         self.img_path_dict = dict()
 
         self.find_list = list()
-
-        self.model_cat = QStandardItemModel()
-
-        self.model_cat.setHorizontalHeaderLabels([bdd_title, self.tr("Description"), "num_attrib"])
-
-        self.errors_list = list()
-
         self.link_orphan = list()
 
         # ---------------------------------------
         # LOADING Translation
         # ---------------------------------------
-
+        self.unknow_title = self.tr("Attribut inconnu")
         self.error_material_exist = self.tr("Détection Doublons dans le dossier")
-        self.error_renamed = self.tr("a été renommé")
 
     def run(self):
 
-        self.model_cat.invisibleRootItem().setData(folder_code, user_data_type)
-
-        tps = time.perf_counter()
+        self.start_loading()
 
         try:
 
@@ -6209,13 +7290,11 @@ class CatalogLoad(QObject):
             if self.region == "GB":
                 self.region = "EN"
 
+            self.allplan.formula_convert_name = self.region == self.allplan.langue
+
         except Exception as error:
             print(f"catalog_manage -- CatalogLoad -- analyse_display -- {error}")
-
-            self.errors_signal.emit([f"{error}"])
-            self.loading_completed.emit(self.model_cat,
-                                        self.expanded_list,
-                                        self.selected_list)
+            self.errors_list.append(f"run -- {error}")
             return False
 
         # -------------------------------------------------
@@ -6226,7 +7305,7 @@ class CatalogLoad(QObject):
         catalog_name = find_filename(self.file_path)
 
         if not catalog_name or not catalog_folder:
-            self.loading_completed.emit(self.model_cat,
+            self.loading_completed.emit(self.cat_model,
                                         self.expanded_list,
                                         self.selected_list)
             print(f"catalog_manage -- CatalogLoad -- analyse_display -- not catalog_name or not catalog_folder")
@@ -6238,25 +7317,18 @@ class CatalogLoad(QObject):
         # chargement hierarchie
         # -------------------------------------------------
 
-        self.model_cat.beginResetModel()
-
-        self.catalog_load(self.model_cat.invisibleRootItem(), self.root, root_display)
+        self.catalog_load(self.cat_model.invisibleRootItem(), self.root, root_display)
 
         if len(self.link_orphan) != 0:
-            self.model_cat.appendRow(self.link_orphan)
+            self.cat_model.appendRow(self.link_orphan)
 
-        self.model_cat.endResetModel()
+        self.link_verification()
 
-        # self.catalogue_charger_liens_manquants()
-        #
-        # if len(self.errors_list) != 0:
-        #     self.errors_signal.emit(self.errors_list)
+        # -------------
 
-        self.loading_completed.emit(self.model_cat,
-                                    self.expanded_list,
-                                    self.selected_list)
+        self.end_loading()
 
-        print(f"Catalog_load : {time.perf_counter() - tps}s")
+        # -------------
 
     @staticmethod
     def display_load(catalog_name: str, catalog_folder: str):
@@ -6476,13 +7548,11 @@ class CatalogLoad(QObject):
         presence_layer = False
         presence_remplissage = False
         presence_piece = False
-        # presence_ht = False
 
         liste_defaut = list()
         datas_attribut_layer = dict(attribute_val_default_layer)
         datas_attribut_remp = dict(attribute_val_default_fill)
         datas_attribut_piece = dict(attribute_val_default_room)
-        # datas_attribut_ht = dict(attribut_val_defaut_ht)
 
         liste_autres = list()
 
@@ -6503,24 +7573,61 @@ class CatalogLoad(QObject):
 
         for attribute in attributes:
 
-            number = attribute.get("id")
+            number_str = attribute.get("id")
             value = attribute.get("value", "")
 
-            if number is None:
+            if number_str is None:
                 print("catalog_manage -- CatalogLoad --  children_load -- number is None")
                 return None
 
-            if number in liste_attributs:
+            if number_str in liste_attributs:
                 print("catalog_manage -- CatalogLoad --  children_load -- number in liste_attributs")
                 continue
 
-            liste_attributs.append(number)
+            liste_attributs.append(number_str)
+
+            attribute_obj = self.allplan.attributes_dict.get(number_str)
+
+            if not isinstance(attribute_obj, AttributeDatas):
+
+                self.number_error_list.append(number_str)
+
+                try:
+                    number_int = int(number_str)
+
+                    user = 1999 < number_int < 12000
+                    import_number = 55000 <= number_int < 99000
+
+                except ValueError:
+                    continue
+
+                attrib_name = f'{self.unknow_title} ({len(self.number_error_list)})'
+
+                self.allplan.allplan_attribute_add(number_str=number_str,
+                                                   name=attrib_name,
+                                                   group="",
+                                                   value="",
+                                                   datatype=type_unknown,
+                                                   option=type_unknown,
+                                                   unit="",
+                                                   uid="???",
+                                                   user=user,
+                                                   import_number=import_number,
+                                                   modify="???",
+                                                   visible="???",
+                                                   min_val="",
+                                                   max_val="",
+                                                   enumeration=QStandardItemModel(),
+                                                   unkown=True)
+
+                liste_autres.append([number_str, value])
+                continue
 
             # -----------------------------------------
             # Attribute 83
             # -----------------------------------------
 
-            if number == attribute_default_base:
+            if number_str == attribut_default_obj.current:
                 name = value
                 continue
 
@@ -6528,7 +7635,7 @@ class CatalogLoad(QObject):
             # Attribute 207
             # -----------------------------------------
 
-            if number == "207":
+            if number_str == "207":
                 description = value
                 continue
 
@@ -6536,87 +7643,78 @@ class CatalogLoad(QObject):
             # Attribute 202
             # -----------------------------------------
 
-            if number == "202":
-                liste_defaut.append([number, self.allplan.convert_unit(value)])
+            if number_str == "202":
+                liste_defaut.append([number_str, self.allplan.convert_unit(unit=value)])
                 continue
 
             # -----------------------------------------
             # Attribute 335
             # -----------------------------------------
 
-            if number == "335":
+            if number_str == "335":
                 self.allplan.surface_all_list.append(value)
 
                 if value not in self.allplan.surface_list:
                     self.allplan.surface_list.append(value)
 
-                liste_autres.append([number, value])
+                liste_autres.append([number_str, value])
                 continue
 
             # -----------------------------------------
             # Attribute 120  - 209 - 110
             # -----------------------------------------
 
-            if number in attribut_val_defaut_defaut:
-                liste_defaut.append([number, value])
+            if number_str in attribut_val_defaut_defaut:
+                liste_defaut.append([number_str, value])
                 continue
 
             # -----------------------------------------
             # Attribute 141 - 349 - 346 - 345 - 347
             # -----------------------------------------
 
-            if number in attribute_val_default_layer:
+            if number_str in attribute_val_default_layer:
                 presence_layer = True
-                datas_attribut_layer[number] = value
+                datas_attribut_layer[number_str] = value
                 continue
 
             # -----------------------------------------
             # Attribute 118 - 111 - 252 - 336 - 600
             # -----------------------------------------
 
-            if number in attribute_val_default_fill:
+            if number_str in attribute_val_default_fill:
                 presence_remplissage = True
-                datas_attribut_remp[number] = value
+                datas_attribut_remp[number_str] = value
                 continue
 
             # -----------------------------------------
             # Attribute 231 - 235 - 232 - 266 - 233 - 264
             # -----------------------------------------
 
-            if number in attribute_val_default_room:
+            if number_str in attribute_val_default_room:
                 presence_piece = True
 
-                if number == "232":
-                    datas_attribut_piece[number] = self.allplan.traduire_valeur_232(value_current=value,
-                                                                                    region=self.region)
+                if number_str == "232":
+                    datas_attribut_piece[number_str] = self.allplan.traduire_valeur_232(value_current=value,
+                                                                                        region=self.region)
 
-                elif number == "233":
-                    datas_attribut_piece[number] = self.allplan.traduire_valeur_233(value_current=value,
-                                                                                    region=self.region)
+                elif number_str == "233":
+                    datas_attribut_piece[number_str] = self.allplan.traduire_valeur_233(value_current=value,
+                                                                                        region=self.region)
 
-                elif number == "235":
-                    datas_attribut_piece[number] = self.allplan.traduire_valeur_235(value_current=value,
-                                                                                    region=self.region)
+                elif number_str == "235":
+                    datas_attribut_piece[number_str] = self.allplan.traduire_valeur_235(value_current=value,
+                                                                                        region=self.region)
 
                 else:
-                    datas_attribut_piece[number] = value
+                    datas_attribut_piece[number_str] = value
 
                 continue
-
-            # -----------------------------------------
-            # Attribute 112 - 113 - 114 - 115 - 169 - 171 - 1978 - 1979
-            # -----------------------------------------
-
-            # if number in attribut_val_defaut_ht:
-            #     presence_ht = True
-            #     datas_attribut_ht[number] = value
-            #     continue
 
             # -----------------------------------------
             # Attribute 76 - 96 - 180 - 267
             # -----------------------------------------
 
-            if number in formula_list_attributes:
+            if number_str in formula_list_attributes:
 
                 if self.allplan.version_allplan_current != "2022":
                     if len(re.findall(pattern=formula_piece_pattern, string=value)):
@@ -6628,7 +7726,7 @@ class CatalogLoad(QObject):
                 if self.region == self.allplan.langue:
                     value = self.allplan.formula_replace_all_name(formula=value)
 
-                liste_autres.append([number, value])
+                liste_autres.append([number_str, value])
                 continue
 
             # -----------------------------------------
@@ -6636,19 +7734,16 @@ class CatalogLoad(QObject):
             # -----------------------------------------
 
             try:
-                number_int = int(number)
+                number_int = int(number_str)
 
                 if 1999 < number_int < 12000:
 
-                    datas_attribute = self.allplan.attributes_dict.get(number, dict())
-
-                    type_attribut = datas_attribute.get(code_attr_option, "")
-
-                    if type_attribut not in [code_attr_formule_str, code_attr_formule_int, code_attr_formule_float]:
-                        liste_autres.append([number, value])
+                    if attribute_obj.option not in [code_attr_formule_str, code_attr_formule_int,
+                                                    code_attr_formule_float]:
+                        liste_autres.append([number_str, value])
                         continue
 
-                    valeur_formule = datas_attribute.get(code_attr_value, "")
+                    valeur_formule = attribute_obj.value
 
                     if self.allplan.version_allplan_current != "2022":
                         if len(re.findall(pattern=formula_piece_pattern, string=valeur_formule)):
@@ -6657,7 +7752,7 @@ class CatalogLoad(QObject):
                                                     string=valeur_formule,
                                                     flags=re.IGNORECASE)
 
-                    liste_autres.append([number, valeur_formule])
+                    liste_autres.append([number_str, valeur_formule])
                     continue
 
             except ValueError:
@@ -6667,7 +7762,7 @@ class CatalogLoad(QObject):
             # Attribute Other
             # -----------------------------------------
 
-            liste_autres.append([number, value])
+            liste_autres.append([number_str, value])
             continue
 
         liste_defaut.sort(key=lambda x: int(x[0]))
@@ -6730,8 +7825,8 @@ class CatalogLoad(QObject):
         # Attribute 120  - 209 - 110
         # -----------------------------------------
 
-        for number, value in liste_defaut:
-            qs_current.appendRow(self.creation.attribute_line(value=value, number=number))
+        for number_str, value in liste_defaut:
+            qs_current.appendRow(self.creation.attribute_line(value=value, number_str=number_str))
 
         # -----------------------------------------
         # Attribute 118 - 111 - 252 - 336 - 600
@@ -6758,39 +7853,39 @@ class CatalogLoad(QObject):
                 datas_attribut_remp["336"] = ""
                 datas_attribut_remp["600"] = "0"
 
-            for number, value in datas_attribut_remp.items():
+            for number_str, value in datas_attribut_remp.items():
 
-                if number == "111":
+                if number_str == "111":
                     qs_current.appendRow(self.creation.attribute_line(value=value,
-                                                                      number=number,
+                                                                      number_str=number_str,
                                                                       model_enumeration=model_enumeration))
                     continue
 
-                qs_current.appendRow(self.creation.attribute_line(value=value, number=number))
+                qs_current.appendRow(self.creation.attribute_line(value=value, number_str=number_str))
 
         # -----------------------------------------
         # Attribute 141 - 349 - 346 - 345 - 347
         # -----------------------------------------
 
         if presence_layer:
-            for number, value in datas_attribut_layer.items():
-                qs_current.appendRow(self.creation.attribute_line(value=value, number=number))
+            for number_str, value in datas_attribut_layer.items():
+                qs_current.appendRow(self.creation.attribute_line(value=value, number_str=number_str))
         # -----------------------------------------
         # Attribute 231 - 235 - 232 - 266 - 233 - 264
         # -----------------------------------------
 
         if presence_piece:
 
-            for number, value in datas_attribut_piece.items():
-                qs_current.appendRow(self.creation.attribute_line(value=value, number=number))
+            for number_str, value in datas_attribut_piece.items():
+                qs_current.appendRow(self.creation.attribute_line(value=value, number_str=number_str))
 
         # -----------------------------------------
         # Attributes Other
         # -----------------------------------------
 
         if len(liste_autres) != 0:
-            for number, value in liste_autres:
-                qs_current.appendRow(self.creation.attribute_line(value=value, number=number, formula_convert=False))
+            for number_str, value in liste_autres:
+                qs_current.appendRow(self.creation.attribute_line(value=value, number_str=number_str))
 
         if tag == "Group":
             self.catalog_load(qs_current, child, current_display)
@@ -6960,6 +8055,70 @@ class CatalogLoad(QObject):
         if link_orphan_find:
             self.link_orphan = qs_folder_list
 
+    def link_verification(self):
+
+        links_set = set(self.link_list)
+
+        link_errors = set()
+
+        for material_name in links_set:
+
+            if material_name in link_errors:
+                continue
+
+            if material_name.upper() not in self.material_with_link_list:
+                continue
+
+            if not self.link_detect_circular(material_name=material_name, visited=set(), path=list()):
+                continue
+
+            link_errors.add(material_name)
+
+    def link_detect_circular(self, material_name: str, visited: set, path: list) -> bool:
+
+        if material_name in visited:
+            loop_start_index = path.index(material_name)
+            loop_path = " -> ".join(path[loop_start_index:])
+
+            print(f"catalog_manage -- CatalogLoad -- link_detect_circular -- loop detected")
+
+            loop_message = self.tr("Liens : Boucle détéctée")
+            self.errors_list.append(f"{loop_message} : {loop_path} -> {material_name}")
+            return True
+
+        visited.add(material_name)
+        path.append(material_name)
+
+        search_start = self.cat_model.index(0, col_cat_value)
+
+        search = self.cat_model.match(search_start, Qt.DisplayRole, material_name, -1,
+                                      Qt.MatchExactly | Qt.MatchRecursive)
+
+        for qm in search:
+
+            if not qm_check(qm):
+                continue
+
+            if qm.data(user_data_type) != link_code:
+                continue
+
+            qm_parent = qm.parent()
+
+            if not qm_check(qm_parent):
+                continue
+
+            parent_name = qm_parent.data()
+
+            if not isinstance(parent_name, str):
+                continue
+
+            if self.link_detect_circular(material_name=parent_name, visited=visited, path=path):
+                return True
+
+        visited.remove(material_name)
+        path.pop()
+        return False
+
     @staticmethod
     def a___________________end___________________():
         pass
@@ -6967,7 +8126,8 @@ class CatalogLoad(QObject):
 
 class CatalogSave(QObject):
 
-    def __init__(self, asc, catalog, allplan, catalog_path="", catalog_setting_display_file=""):
+    def __init__(self, asc, catalog, allplan, catalog_path="", catalog_setting_display_file="",
+                 exlcude_default_attribute=""):
 
         super().__init__()
 
@@ -6978,13 +8138,12 @@ class CatalogSave(QObject):
 
         self.catalog: CatalogDatas = catalog
 
-        self.model = self.catalog.cat_model
+        self.model = self.ui.hierarchy.cat_model
 
-        self.qs_selection_list = self.catalog.get_qs_selection_list()
+        self.exlcude_default_attribute = exlcude_default_attribute
 
-        self.qs_expanded_list = list()
-        self.catalog.save_expand_qs_in_list_of(qs_parent=self.model.invisibleRootItem(),
-                                               expanded_list=self.qs_expanded_list)
+        self.qm_selection_list = self.ui.hierarchy.get_qm_model_selection_list()
+        self.qm_expanded_list = self.ui.hierarchy.get_qm_model_expanded_list()
 
         self.link_list = list()
 
@@ -7129,38 +8288,43 @@ class CatalogSave(QObject):
 
         self.link_list.sort()
 
+        if len(self.link_list) == 0:
+            return
+
         links = etree.Element("Links")
-        root.insert(0, links)
 
         for material_name in self.link_list:
 
             linkdef = etree.Element("LinkDef", name=material_name)
 
-            self.save_sub_links(material_name=material_name, linkdef=linkdef, sub_link_list=list())
+            self.save_sub_links(material_name=material_name, linkdef=linkdef, visited=set())
 
             if len(linkdef) == 0:
                 continue
 
             links.append(linkdef)
 
-    def save_sub_links(self, material_name: str, linkdef: etree._Element, sub_link_list: list):
+        if len(links) == 0:
+            return
+
+        root.insert(0, links)
+
+    def save_sub_links(self, material_name: str, linkdef: etree._Element, visited: set) -> bool:
+
+        if material_name in visited:
+            print(f"catalog_manage -- CatalogSave -- save_sub_link -- {material_name} in visited")
+            return True
 
         qs_material: MyQstandardItem = self.material_dict.get(material_name, None)
 
         if not isinstance(qs_material, Material):
             print("catalog_manage -- CatalogSave -- save_sub_link -- not isinstance(qs_material, Material)")
-            return
+            return True
 
-        material_name = qs_material.text()
-
-        if material_name in sub_link_list:
-            print("catalog_manage -- CatalogSave -- save_sub_link -- material_name in sub_link_list")
-            return
-
-        sub_link_list.append(material_name)
+        visited.add(material_name)
 
         if not qs_material.hasChildren():
-            return
+            return True
 
         for index_child in range(qs_material.rowCount()):
 
@@ -7171,52 +8335,57 @@ class CatalogSave(QObject):
                 continue
 
             if isinstance(qs_child, Link):
-                self.save_sub_links(material_name=qs_child.text(), linkdef=linkdef, sub_link_list=sub_link_list)
-                continue
+                if self.save_sub_links(material_name=qs_child.text(), linkdef=linkdef, visited=visited):
+                    return True
+
+        visited.remove(material_name)
+        return False
 
     def sauvegarde_hierarchie(self, item_parent: MyQstandardItem, racine: etree._Element, affichage: etree._Element):
 
         for index_row in range(item_parent.rowCount()):
 
-            item = item_parent.child(index_row, col_cat_value)
+            qs_value = item_parent.child(index_row, col_cat_value)
             qs_desc = item_parent.child(index_row, col_cat_desc)
 
-            if isinstance(item, Attribute):
+            if isinstance(qs_value, Attribute):
                 continue
 
             if not isinstance(qs_desc, Info):
                 continue
 
-            deplier = item in self.qs_expanded_list
-            selected = item in self.qs_selection_list
+            qm_value = qs_value.index()
 
-            if isinstance(item, Folder):
+            deplier = qm_value in self.qm_expanded_list
+            selected = qm_value in self.qm_selection_list
 
-                icone_dossier = item.icon_path
-                node, node_aff = self.new_folder(item, racine, affichage, deplier, selected, icone_dossier,
+            if isinstance(qs_value, Folder):
+
+                icone_dossier = qs_value.icon_path
+                node, node_aff = self.new_folder(qs_value, racine, affichage, deplier, selected, icone_dossier,
                                                  qs_desc.text())
 
-                if not item.hasChildren():
+                if not qs_value.hasChildren():
                     continue
 
-                self.sauvegarde_hierarchie(item, node, node_aff)
+                self.sauvegarde_hierarchie(qs_value, node, node_aff)
                 continue
 
-            if isinstance(item, Material):
-                group, node_aff = self.new_material(item, racine, affichage, deplier, selected)
+            if isinstance(qs_value, Material):
+                group, node_aff = self.new_material(qs_value, racine, affichage, deplier, selected)
 
-                if not item.hasChildren():
+                if not qs_value.hasChildren():
                     continue
 
-                self.sauvegarde_hierarchie(item, group, node_aff)
+                self.sauvegarde_hierarchie(qs_value, group, node_aff)
                 continue
 
-            elif isinstance(item, Component):
-                self.new_component(item, racine, affichage, selected)
+            elif isinstance(qs_value, Component):
+                self.new_component(qs_value, racine, affichage, selected)
                 continue
 
-            elif isinstance(item, Link):
-                self.new_link(item, racine, affichage, selected)
+            elif isinstance(qs_value, Link):
+                self.new_link(qs_value, racine, affichage, selected)
                 continue
 
     @staticmethod
@@ -7343,7 +8512,8 @@ class CatalogSave(QObject):
 
         # titre = item.text()
 
-        etree.SubElement(definition, 'Attribute', id=attribute_default_base, value=item.text())
+        if attribut_default_obj.current != "":
+            etree.SubElement(definition, 'Attribute', id=attribut_default_obj.current, value=item.text())
 
         nb_enfants = item.rowCount()
         plume = True
@@ -7354,34 +8524,55 @@ class CatalogSave(QObject):
 
         for index_row in range(nb_enfants):
 
-            qstandarditem_enfant_valeur: QStandardItem = item.child(index_row, col_cat_value)
+            qs_child_value: QStandardItem = item.child(index_row, col_cat_value)
 
-            if not isinstance(qstandarditem_enfant_valeur, Attribute):
+            if not isinstance(qs_child_value, Attribute):
                 return
 
-            qstandarditem_enfant_numero: QStandardItem = item.child(index_row, col_cat_number)
-            valeur = qstandarditem_enfant_valeur.text()
-            numero = qstandarditem_enfant_numero.text()
+            qs_number_child: QStandardItem = item.child(index_row, col_cat_number)
 
-            if numero in liste_attributs_with_no_val_no_save and valeur == "":
+            if not isinstance(qs_number_child, Info):
+                print("catalog_manage -- new_attribute -- not isinstance(qs_number_child, Info)")
+                return
+
+            valeur = qs_child_value.text()
+            number_str = qs_number_child.text()
+
+            if number_str == attribut_default_obj.current or number_str == self.exlcude_default_attribute:
                 continue
 
-            if numero in attributes_list:
+            if number_str in liste_attributs_with_no_val_no_save and valeur == "":
                 continue
 
-            if numero == "349":
+            if number_str in attributes_list:
+                continue
+
+            if number_str == "349":
                 plume, trait, couleur = self.layout_manage(valeur)
 
-            if (numero == "346" and not plume) or (numero == "345" and not trait) or (numero == "347" and not couleur):
+            if ((number_str == "346" and not plume) or (number_str == "345" and not trait) or
+                    (number_str == "347" and not couleur)):
                 continue
 
-            type_ele2: str = self.allplan.find_datas_by_number(number=numero, key=code_attr_option)
+            attribute_obj = self.allplan.attributes_dict.get(number_str)
+
+            if not isinstance(attribute_obj, AttributeDatas):
+                print("catalog_manage -- CatalogSave -- new_attribute -- not isinstance(attribute_obj, AttributeDatas)")
+                continue
+
+            type_ele2: str = attribute_obj.option
 
             if type_ele2 == code_attr_combo_int:
-                qstandarditem_enfant_combo: QStandardItem = item.child(index_row, col_cat_index)
-                valeur = qstandarditem_enfant_combo.text()
+                qs_index_child: QStandardItem = item.child(index_row, col_cat_index)
+
+                if not isinstance(qs_index_child, Info):
+                    print("catalog_manage -- CatalogSave -- new_attribute -- not isinstance(qs_index_child, Info)")
+                    continue
+
+                valeur = qs_index_child.text()
 
                 if not isinstance(valeur, str):
+                    print("catalog_manage -- CatalogSave -- new_attribute -- not isinstance(valeur, str)")
                     continue
 
                 if valeur.startswith("0"):
@@ -7394,8 +8585,8 @@ class CatalogSave(QObject):
 
                     valeur = f"{valeur_int}"
 
-                etree.SubElement(definition, 'Attribute', id=numero, value=valeur)
-                attributes_list.append(numero)
+                etree.SubElement(definition, 'Attribute', id=number_str, value=valeur)
+                attributes_list.append(number_str)
                 continue
 
             if type_ele2 in [code_attr_formule_str, code_attr_formule_int, code_attr_formule_float]:
@@ -7404,7 +8595,7 @@ class CatalogSave(QObject):
                     valeur = valeur.replace("\n", "")
 
                 try:
-                    numero_int = int(numero)
+                    numero_int = int(number_str)
 
                     if 1999 < numero_int < 12000:
                         valeur = "1"
@@ -7416,12 +8607,12 @@ class CatalogSave(QObject):
                 except ValueError:
                     pass
 
-                etree.SubElement(definition, 'Attribute', id=numero, value=valeur)
-                attributes_list.append(numero)
+                etree.SubElement(definition, 'Attribute', id=number_str, value=valeur)
+                attributes_list.append(number_str)
                 continue
 
-            etree.SubElement(definition, 'Attribute', id=numero, value=valeur)
-            attributes_list.append(numero)
+            etree.SubElement(definition, 'Attribute', id=number_str, value=valeur)
+            attributes_list.append(number_str)
         return
 
     @staticmethod
@@ -7465,130 +8656,6 @@ class CatalogSave(QObject):
             return plume, trait, couleur
 
         return plume, trait, couleur
-
-    @staticmethod
-    def a___________________end___________________():
-        pass
-
-
-class SpecialFilterProxyModel(QSortFilterProxyModel):
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-
-        self.search_number = ""
-        self.search_type = ""
-
-    def set_custom_filter(self, search_number: str, search_type: str) -> None:
-
-        if not isinstance(search_number, str) or not isinstance(search_type, str):
-            self.search_number = ""
-            self.search_type = ""
-            return
-
-        self.search_type = search_type
-        self.search_number = search_number
-
-    def clear_custom_filter(self) -> None:
-        self.search_number = ""
-        self.search_type = ""
-
-    def active_custom_filter(self) -> bool:
-        return self.search_number != "" or self.search_type != ""
-
-    def filterAcceptsRow(self, source_row: int, source_parent: QModelIndex):
-
-        if self.filterRegExp().isEmpty():
-            return True
-
-        model = self.sourceModel()
-
-        if model is None:
-            return False
-
-        # ----------
-        # Value
-        # ----------
-
-        qm_value = model.index(source_row, self.filterKeyColumn(), source_parent)
-
-        if not isinstance(qm_value, QModelIndex):
-            return False
-
-        current_value = qm_value.data(self.filterRole())
-
-        if not isinstance(current_value, str):
-            return False
-
-        reg_exp = self.filterRegExp()
-
-        valid_text = reg_exp.indexIn(current_value) >= 0
-
-        if self.search_number == "" and self.search_type == "":
-            return valid_text
-
-        if not valid_text:
-            # print(f"False - None - None --> Value : {current_value} isn't valid ({reg_exp})")
-            return False
-
-        # ----------
-        # Type
-        # ----------
-
-        if self.search_type != "":
-
-            qm_type = model.index(source_row, col_cat_value, source_parent)
-
-            if not isinstance(qm_type, QModelIndex):
-                return False
-
-            current_type = qm_type.data(user_data_type)
-
-            # If attribute -> get parent_type
-            if current_type == attribute_code:
-                qm_type = qm_type.parent()
-
-                if not isinstance(qm_type, QModelIndex):
-                    return False
-
-                current_type = qm_type.data(user_data_type)
-
-            regex_type = QRegExp(self.search_type, Qt.CaseInsensitive)
-
-            if regex_type.indexIn(current_type) < 0:
-                # print(f"True - False - None --> Value : {current_value} is valid ({reg_exp}) but "
-                #       f"type : {current_type} isn't valid {self.search_type}")
-                return False
-
-        # else:
-        #     current_type = ""
-
-        # ----------
-        # Number
-        # ----------
-
-        if self.search_number == "":
-            return True
-
-        qm_number = model.index(source_row, col_cat_number, source_parent)
-
-        if not isinstance(qm_number, QModelIndex):
-            return False
-
-        current_number = qm_number.data()
-
-        valid_number = current_number == self.search_number
-
-        # if not valid_number:
-        #     print(f"True - True - False --> Value : {current_value} is valid ({reg_exp}) and "
-        #           f"number : {current_number} isn't valid ({self.search_number})")
-        #
-        # else:
-        #
-        #     print(f"True - True - True --> Value : {current_value} is valid ({reg_exp}) and "
-        #           f"number : {current_number} is valid ({self.search_number})")
-
-        return valid_number
 
     @staticmethod
     def a___________________end___________________():

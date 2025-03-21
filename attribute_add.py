@@ -4,10 +4,9 @@
 
 from allplan_manage import *
 from tools import afficher_message as msg
-from tools import favorites_import_verification, copy_to_clipboard, convert_list_attribute_number
+from tools import favorites_import_verification, copy_to_clipboard, convert_list_attribute_number, browser_file
 from tools import move_window_tool, load_csv, get_look_tableview, qm_check, settings_save, MyContextMenu
 from ui_attribute_add import Ui_AttributeAdd
-from browser import browser_file
 
 
 # todo si selection d'un attribut d'une catégorie. après fermeture, l'attribut n'est pas repris.
@@ -58,8 +57,6 @@ class AttributesWidget(QWidget):
 
         self.current_mod = ""
         self.reload_autocompletion = False
-
-        self.group_model = QStandardItemModel()
 
         # ---------------------------------------
         # FILTER GROUPS
@@ -261,6 +258,10 @@ class AttributesWidget(QWidget):
         return ""
 
     def group_changed(self, qlistwidgetitem: QListWidgetItem):
+
+        if not isinstance(qlistwidgetitem, QListWidgetItem):
+            print("attribute_add -- group_changed -- not isinstance(qlistwidgetitem, QListWidgetItem)")
+            return
 
         group_name = qlistwidgetitem.text()
 
@@ -1236,16 +1237,6 @@ class AttributesWidget(QWidget):
                         numbers_list.append(number_sub)
 
                 continue
-
-            # elif number in attribute_val_default_ht:
-            #
-            #     for number_sub in attribute_val_default_ht:
-            #
-            #         if number_sub not in numbers_list:
-            #
-            #             numbers_list.append(number_sub)
-            #
-            #     continue
 
             else:
 

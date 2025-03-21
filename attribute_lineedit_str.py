@@ -1,20 +1,22 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*
-
+from allplan_manage import AttributeDatas
 from formatting_widget import Formatting
-from hierarchy_qs import *
+from hierarchy import MyQstandardItem, Material, Info
+from main_datas import *
+from history_manage import AttributeModifyData
 from tools import set_appareance_button, set_appearance_number, set_appearence_type
 from ui_attribute_lineedit_str import Ui_AttributeLineeditStr
 
 
 class AttributeLineeditStr(QWidget):
-    attribute_changed_signal = pyqtSignal(QStandardItem, str, str, str)
+    attribute_changed_signal = pyqtSignal(str, list, str, dict)
     link_desc_changed_signal = pyqtSignal(str, str)
 
     def __init__(self, allplan_version: str,
                  qs_value: MyQstandardItem,
                  qs_desc: MyQstandardItem,
-                 attribute_datas: dict,
+                 attribute_obj: AttributeDatas,
                  listwidgetitem: QListWidgetItem,
                  is_material=False):
 
@@ -58,11 +60,11 @@ class AttributeLineeditStr(QWidget):
 
         # ----------------------------------
 
-        if isinstance(attribute_datas, dict):
+        if isinstance(attribute_obj, AttributeDatas):
 
             if is_material:
-                min_value = attribute_datas.get(code_attr_min, 0)
-                max_value = attribute_datas.get(code_attr_max, 2048)
+                min_value = attribute_obj.min_val
+                max_value = attribute_obj.max_val
                 # max_value = "2048"
 
             else:
@@ -70,10 +72,10 @@ class AttributeLineeditStr(QWidget):
                 min_value = "0"
                 max_value = "2048"
 
-            self.ui.num_attrib.setText(attribute_datas.get(code_attr_number, ""))
+            self.ui.num_attrib.setText(attribute_obj.number)
 
-            self.ui.name_attrib.setText(attribute_datas.get(code_attr_name, ""))
-            self.ui.name_attrib.setToolTip(attribute_datas.get(code_attr_tooltips))
+            self.ui.name_attrib.setText(attribute_obj.name)
+            self.ui.name_attrib.setToolTip(attribute_obj.tooltips)
 
         else:
 
@@ -319,32 +321,79 @@ class AttributeLineeditStr(QWidget):
 
     def lineedit_update(self):
 
-        value_original = self.qs_value.text()
-        value = self.ui.value_attrib.toPlainText()
+        value_current = self.qs_value.text()
+        value_new = self.ui.value_attrib.toPlainText()
 
-        value_strip = value.strip()
-
-        if value != value_strip:
+        if value_new != value_new.strip():
             self.ui.value_attrib.blockSignals(True)
-            self.ui.value_attrib.setPlainText(value_strip)
+            self.ui.value_attrib.setPlainText(value_new.strip())
             self.ui.value_attrib.blockSignals(False)
+            value_new = value_new.strip()
 
-        if value_original == value_strip:
+        if value_current == value_new:
             return
 
-        self.qs_value.setText(value_strip)
+        # -------------
 
-        number = self.ui.num_attrib.text()
+        self.qs_value.setText(value_new)
 
-        if number == "207" and isinstance(self.qs_desc, Info):
-            self.qs_desc.setText(value_strip)
+        # -------------
 
-            qs_parent = self.qs_value.parent()
+        qs_parent = self.qs_value.parent()
+
+        if not isinstance(qs_parent, QStandardItem):
+            print("attribute_lineedit_str -- lineedit_update -- not isinstance(qs_parent, QStandardItem)")
+            return
+
+        # -------------
+
+        guid_parent = qs_parent.data(user_guid)
+
+        if not isinstance(guid_parent, str):
+            print("attribute_lineedit_str -- lineedit_update -- not isinstance(guid_parent, str)")
+            return
+
+        # -------------
+
+        parent_name = qs_parent.text()
+
+        if not isinstance(parent_name, str):
+            print("attribute_lineedit_str -- lineedit_update -- not isinstance(parent_name, str)")
+            return
+
+        # -------------
+        number_current = self.ui.num_attrib.text()
+
+        if number_current == "207" and isinstance(self.qs_desc, Info):
+
+            self.qs_desc.setText(value_new)
 
             if isinstance(qs_parent, Material):
-                self.link_desc_changed_signal.emit(self.code_title.text(), value_strip)
+                self.link_desc_changed_signal.emit(self.code_title.text(), value_new)
 
-        self.attribute_changed_signal.emit(self.qs_value, self.ui.num_attrib.text(), value_original, value_strip)
+            # -------------
+
+            guid_desc = self.qs_desc.data(user_guid)
+
+            if not isinstance(guid_desc, str):
+                print("attribute_lineedit_str -- lineedit_update -- not isinstance(guid_desc, str)")
+                return
+
+        else:
+
+            guid_desc = None
+
+        # -------------
+
+        value_dict = {number_current: [value_current, value_new]}
+
+        # -------------
+
+        data = AttributeModifyData(number_current=number_current, value_new=value_current, guid_desc=guid_desc)
+
+        attribute_data = [data]
+
+        self.attribute_changed_signal.emit(guid_parent, attribute_data, parent_name, value_dict)
 
     @staticmethod
     def a___________________formatting______():
@@ -392,6 +441,8 @@ class AttributeLineeditStr(QWidget):
             return super().eventFilter(obj, event)
 
         if event.type() == event.KeyPress:
+
+            event: event.KeyPress
 
             if event.key() in (Qt.Key_Backspace, Qt.Key_Delete, Qt.Key_Left, Qt.Key_Right,
                                Qt.Key_Up, Qt.Key_Down, Qt.Key_Home, Qt.Key_End):

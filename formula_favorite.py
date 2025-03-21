@@ -14,11 +14,10 @@ from main_datas import formula_fav_setting_file, app_setting_file, formula_fav_c
 from models import ModelsTabDel
 from tools import afficher_message as msg
 from tools import qm_check, find_new_title, move_window_tool, recherche_image, application_title, MyContextMenu
-from tools import settings_save, get_look_tableview, settings_read
+from tools import settings_save, get_look_tableview, settings_read, browser_file
 from ui_formula_favorite import Ui_FormulaFavorite
 from ui_formula_favorite_modify import Ui_FormulaFavoriteModify
 from ui_formula_favorite_tab import Ui_FormulaFavoriteTab
-from browser import browser_file
 
 
 class FormulaFavorite(QWidget):

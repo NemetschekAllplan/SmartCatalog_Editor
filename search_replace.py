@@ -29,6 +29,8 @@ class Replace(QWidget):
         self.asc.langue_change.connect(lambda main=self: self.ui.retranslateUi(main))
         self.asc.langue_change.connect(self.attribute_model_reset)
 
+        self.hierarchy: Hierarchy = self.asc.ui.hierarchy
+
         self.allplan: AllplanDatas = self.asc.allplan
 
         self.catalog: CatalogDatas = catalog
@@ -87,7 +89,7 @@ class Replace(QWidget):
 
         # -----------------------------------------------
 
-        ele_type = replace_datas.get("ele_type",  replace_setting_datas.get("ele_type"))
+        ele_type = replace_datas.get("ele_type", replace_setting_datas.get("ele_type"))
 
         if ele_type == component_code:
             self.ui.component_bt.setChecked(True)
@@ -105,10 +107,10 @@ class Replace(QWidget):
             attributes_list = replace_setting_datas.get("attributes_list")
 
         # -----------------------------------------------
-        number = replace_datas.get("attribute", replace_setting_datas.get("attribute"))
+        number_str = replace_datas.get("attribute", replace_setting_datas.get("attribute"))
 
-        if not isinstance(number, str):
-            number = replace_setting_datas.get("attribute")
+        if not isinstance(number_str, str):
+            number_str = replace_setting_datas.get("attribute")
 
         # -----------------------------------------------
         # attributes widget
@@ -254,12 +256,13 @@ class Replace(QWidget):
 
         # -----------------------------------------------
 
-        name = self.allplan.find_datas_by_number(number=number, key=code_attr_name)
+        attribute_obj = self.allplan.attributes_dict.get(number_str)
 
-        if not isinstance(name, str):
+        if not isinstance(attribute_obj, AttributeDatas):
+            print("order_widget -- order_model_init -- not isinstance(attribute_obj, AttributeDatas) 4")
             return
 
-        row_index = self.ui.attribute_combo.findText(name, Qt.MatchExactly)
+        row_index = self.ui.attribute_combo.findText(attribute_obj.name, Qt.MatchExactly)
 
         if row_index == -1:
             return
@@ -290,7 +293,7 @@ class Replace(QWidget):
         number = self.get_catalog_current_number()
 
         if number is not None:
-            self.attribute_changed(number=number)
+            self.attribute_changed(number_str=number)
         else:
             self.attribute_combo_changed(row_index=self.ui.attribute_combo.currentIndex())
 
@@ -329,7 +332,7 @@ class Replace(QWidget):
 
     def get_catalog_current_value(self, number=""):
 
-        qs: MyQstandardItem = self.catalog.get_current_qs()
+        qs: MyQstandardItem = self.hierarchy.get_current_qs()
 
         if qs is None:
             self.ui.value_reset.setEnabled(False)
@@ -346,7 +349,7 @@ class Replace(QWidget):
             print("search_replace -- get_catalog_current_value -- not isinstance(qs, Component)")
             return
 
-        if number == attribute_default_base:
+        if number == attribut_default_obj.current:
             value = qs.text()
 
             if value is None:
@@ -378,7 +381,7 @@ class Replace(QWidget):
 
     def ele_type_reset(self):
 
-        qs = self.catalog.get_current_qs()
+        qs = self.hierarchy.get_current_qs()
 
         if not isinstance(qs, MyQstandardItem):
             self.replace_buttons_manage()
@@ -455,7 +458,7 @@ class Replace(QWidget):
                 print("search_replace -- attribute_model_creation -- number == 0")
                 continue
 
-            if not self.attribute_model_add(number=number, add_button=False):
+            if not self.attribute_model_add(number_str=number, add_button=False):
                 return
 
         self.attribute_filter.sort(0, Qt.AscendingOrder)
@@ -464,21 +467,28 @@ class Replace(QWidget):
 
         self.replace_buttons_manage()
 
-    def attribute_model_add(self, number: str, name="", add_button=True) -> bool:
+    def attribute_model_add(self, number_str: str, name="", add_button=True) -> bool:
 
-        if not isinstance(number, str):
+        if not isinstance(number_str, str):
             print("search_replace -- attribute_model_add -- not isinstance(number, str)")
             return False
 
         if name == "":
-            name = self.allplan.find_datas_by_number(number, code_attr_name)
+
+            attribute_obj = self.allplan.attributes_dict.get(number_str)
+
+            if not isinstance(attribute_obj, AttributeDatas):
+                print("search_replace -- attribute_model_add -- not isinstance(attribute_obj, AttributeDatas)")
+                return False
+
+            name = attribute_obj.name
 
         if not isinstance(name, str):
             print("search_replace -- attribute_model_add -- not isinstance(name, str)")
             return False
 
         try:
-            number = str(int(number))
+            number_str = str(int(number_str))
         except Exception:
             print("search_replace -- attribute_model_add -- value isn't number")
             return False
@@ -488,7 +498,7 @@ class Replace(QWidget):
         if row_current > -1:
             return False
 
-        self.attribute_model_add_item(name=name, number=number, add_button=add_button)
+        self.attribute_model_add_item(name=name, number=number_str, add_button=add_button)
 
         return True
 
@@ -567,7 +577,6 @@ class Replace(QWidget):
     def attribute_combo_changed(self, row_index: int):
 
         if row_index == -1:
-
             # textbox
             self.ui.lineedit_widget.setVisible(True)
 
@@ -583,7 +592,6 @@ class Replace(QWidget):
         qm = self.attribute_filter.index(row_index, 0)
 
         if not qm_check(qm):
-
             # textbox
             self.ui.lineedit_widget.setVisible(True)
 
@@ -598,29 +606,27 @@ class Replace(QWidget):
 
         number = qm.data(Qt.ToolTipRole)
 
-        self.attribute_changed(number=number)
+        self.attribute_changed(number_str=number)
 
-    def attribute_changed(self, number: str):
+    def attribute_changed(self, number_str: str):
 
         # -------------------------------------------
         # Number
         # -------------------------------------------
 
-        datas = self.allplan.find_all_datas_by_number(number=number)
+        attribute_obj = self.allplan.attributes_dict.get(number_str)
 
-        name = datas.get(code_attr_name, None)
-
-        if not isinstance(name, str):
-            print("search_replace -- attribute_changed -- not isinstance(name, str)")
+        if not isinstance(attribute_obj, AttributeDatas):
+            print("search_replace -- attribute_changed -- not isinstance(attribute_obj, AttributeDatas)")
             return
 
         # -------------------------------------------
         # Number already exists -> if not -> add number in model
         # -------------------------------------------
 
-        self.attribute_model_add(number=number, name=name, add_button=True)
+        self.attribute_model_add(number_str=number_str, name=attribute_obj.name, add_button=True)
 
-        search_index = self.attribute_get_index(name=name, on_filter=True)
+        search_index = self.attribute_get_index(name=attribute_obj.name, on_filter=True)
 
         if search_index == -1:
             print("search_replace -- attribute_changed -- search_index == -1")
@@ -638,7 +644,7 @@ class Replace(QWidget):
         # manage replace
         # -------------------------------------------
 
-        self.replace_by_manage(number=number)
+        self.replace_by_manage(number_str=number_str)
 
         self.ui.attribute_combo.blockSignals(False)
 
@@ -661,19 +667,17 @@ class Replace(QWidget):
         if not self.ui.lineedit_value.isVisible():
             return
 
-        a_type = datas.get(code_attr_option, code_attr_str)
-
         current_type = self.replace_by_save()
 
-        if a_type in [code_attr_str, code_attr_formule_str] and current_type != str:
+        if attribute_obj.option in [code_attr_str, code_attr_formule_str] and current_type != str:
             self.ui.lineedit_value.setText(f"{self.str_save}")
             return
 
-        if a_type in [code_attr_int, code_attr_formule_int] and current_type != int:
+        if attribute_obj.option in [code_attr_int, code_attr_formule_int] and current_type != int:
             self.ui.lineedit_value.setText(f"{self.int_save}")
             return
 
-        if a_type in [code_attr_dbl, code_attr_formule_float] and current_type != float:
+        if attribute_obj.option in [code_attr_dbl, code_attr_formule_float] and current_type != float:
             self.ui.lineedit_value.setText(f"{self.float_save}")
             self.lineedit_float_formatting()
             return
@@ -686,7 +690,7 @@ class Replace(QWidget):
             print("search_replace -- attribute_reset -- not isinstance(number, str)")
             return
 
-        self.attribute_changed(number=number)
+        self.attribute_changed(number_str=number)
 
     def get_combo_current_number(self):
 
@@ -812,11 +816,14 @@ class Replace(QWidget):
         self.str_save = current_text
         return str
 
-    def replace_by_manage(self, number: str):
+    def replace_by_manage(self, number_str: str):
 
-        datas = self.allplan.find_all_datas_by_number(number=number)
+        attribute_obj = self.allplan.attributes_dict.get(number_str)
 
-        a_type = datas.get(code_attr_option, code_attr_str)
+        if not isinstance(attribute_obj, AttributeDatas):
+            return
+
+        a_type = attribute_obj.option
 
         # -----------------------------------------------
         # Checkbox
@@ -946,7 +953,7 @@ class Replace(QWidget):
 
                 self.ui.combo_type.setToolTip(self.tr("Cette liste déroulante n'est pas éditable"))
 
-                self.ui.combo_value.setValidator(ValidatorModel(self.ui.combo_value.model()))
+                self.ui.combo_value.setValidator(ValidatorModel(model=self.ui.combo_value.model(), column_index=1))
 
             else:
 
@@ -960,7 +967,7 @@ class Replace(QWidget):
             self.ui.checkbox_widget.setVisible(False)
 
             # enumeration
-            combo_model = datas.get(code_attr_enumeration, QStandardItemModel)
+            combo_model = attribute_obj.enumeration
 
             self.replace_by_filter.setSourceModel(combo_model)
             self.replace_by_filter.setFilterKeyColumn(1)
@@ -1116,7 +1123,7 @@ class Replace(QWidget):
 
     def library_changed(self, number: str, new_value: str):
 
-        self.attribute_changed(number=number)
+        self.attribute_changed(number_str=number)
 
         if self.ui.lineedit_widget.isVisible():
             self.ui.lineedit_value.setText(new_value)
@@ -1167,7 +1174,7 @@ class Replace(QWidget):
 
         number_search = self.get_combo_current_number()
 
-        if number_search == attribute_default_base:
+        if number_search == attribut_default_obj.current:
 
             if self.ui.component_bt.isChecked():
                 obj_type = Component
@@ -1189,9 +1196,9 @@ class Replace(QWidget):
         # search
         # -------------------------------------------
 
-        search_qs_list = self.catalog.cat_model.findItems(value_search,
-                                                          Qt.MatchExactly | Qt.MatchRecursive,
-                                                          col_cat_value)
+        search_qs_list = self.hierarchy.cat_model.findItems(value_search,
+                                                            Qt.MatchExactly | Qt.MatchRecursive,
+                                                            col_cat_value)
 
         if len(search_qs_list) == 0:
             if self.isVisible() and message_show:
@@ -1230,8 +1237,8 @@ class Replace(QWidget):
 
                 qs_number = qs_current.child(child_row, col_cat_number)
 
-                if not isinstance(qs_number, MyQstandardItem):
-                    print("search_replace -- search_launch -- not isinstance(qs_number, MyQstandardItem)")
+                if not isinstance(qs_number, Info):
+                    print("search_replace -- search_launch -- not isinstance(qs_number, Info)")
                     continue
 
                 number_current = qs_number.text()
@@ -1239,7 +1246,7 @@ class Replace(QWidget):
             else:
 
                 qs_current = qs
-                number_current = attribute_default_base
+                number_current = attribut_default_obj.current
 
             if number_current != number_search:
                 continue
@@ -1285,7 +1292,7 @@ class Replace(QWidget):
         if not isinstance(qs_parent, QStandardItem):
             return current_path
 
-        if qs_parent == self.catalog.cat_model.invisibleRootItem():
+        if qs_parent == self.hierarchy.cat_model.invisibleRootItem():
             return current_path
 
         current_path = f"{qs_parent.text()}\\{current_path}"
@@ -1317,7 +1324,7 @@ class Replace(QWidget):
             print("search_replace -- show_selected_qs -- not isinstance(Material) and not isinstance(Component)")
             return
 
-        self.catalog.catalog_select_action([qs])
+        self.hierarchy.select_list([qs])
 
     def replace_menu_show(self, point: QPoint):
 
@@ -1414,7 +1421,7 @@ class Replace(QWidget):
 
         number = self.get_combo_current_number()
 
-        if number == attribute_default_base:
+        if number == attribut_default_obj.current:
 
             if self.ui.component_bt.isChecked():
 
@@ -1468,7 +1475,7 @@ class Replace(QWidget):
         ok_list = list()
         errors_list = list()
 
-        qs_catalog_selected = self.catalog.get_current_qs()
+        qs_catalog_selected = self.hierarchy.get_current_qs()
 
         for qm in qm_selection_list:
 
@@ -1525,8 +1532,8 @@ class Replace(QWidget):
 
                 qs_index = qs_attributes_list[col_cat_index]
 
-                if not isinstance(qs_index, Attribute):
-                    print(f"search_replace -- replace_action -- not isinstance(qs_index, Attribute)")
+                if not isinstance(qs_index, Info):
+                    print(f"search_replace -- replace_action -- not isinstance(qs_index, Info)")
                     errors_list.append(path_current)
                     continue
 
@@ -1541,7 +1548,7 @@ class Replace(QWidget):
 
                     if qs_catalog_selected == qs:
                         qm_catalog = qs.index()
-                        self.catalog.catalog_select_action(selected_list=[qm_catalog], scrollto=False)
+                        self.hierarchy.select_list(selected_list=[qm_catalog], scrollto=False)
                     continue
 
                 qs_parent = qs.parent()
@@ -1553,20 +1560,20 @@ class Replace(QWidget):
 
                 row_index = qs.row()
 
-                qs_description = qs_parent.child(row_index, col_cat_desc)
+                qs_desc = qs_parent.child(row_index, col_cat_desc)
 
-                if not isinstance(qs_description, Info):
+                if not isinstance(qs_desc, Info):
                     print(f"search_replace -- replace_action -- not isinstance(qs_description, Info)")
                     errors_list.append(path_current)
                     continue
 
                 qs_value.setText(value_replace)
-                qs_description.setText(value_replace)
+                qs_desc.setText(value_replace)
                 ok_list.append(path_current)
 
                 if qs_catalog_selected == qs:
                     qm_catalog = qs.index()
-                    self.catalog.catalog_select_action(selected_list=[qm_catalog], scrollto=False)
+                    self.hierarchy.select_list(selected_list=[qm_catalog], scrollto=False)
 
                 continue
 
@@ -1578,7 +1585,7 @@ class Replace(QWidget):
 
             if qs_catalog_selected == qs:
                 qm_catalog = qs.index()
-                self.catalog.catalog_select_action(selected_list=[qm_catalog], scrollto=False)
+                self.hierarchy.select_list(selected_list=[qm_catalog], scrollto=False)
 
             continue
 
@@ -1843,6 +1850,8 @@ class Replace(QWidget):
 
         if event.type() != QEvent.KeyPress:
             return super().eventFilter(obj, event)
+
+        event: QEvent.KeyPress
 
         if event.key() == Qt.Key_Up or event.key() == Qt.Key_Down:
             event.ignore()

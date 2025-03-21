@@ -1,20 +1,17 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*
-import json
+
 import os.path
 
+from bar_search_filter import SearchFiterWidget
 from catalog_manage import *
-from convert_manage import BddTypeDetection, ConvertBcmOuvrages, ConvertBcmComposants, ConvertCSV, ConvertMXDB, \
-    ConvertNevarisXml, ConvertNevarisExcel
-from convert_manage import ConvertAllmetre, ConvertFavorite, ConvertExcel, ConvertExtern, ConvertKukat
+from convert_manage import *
 from formatting_widget import Formatting
-from hierarchy_qs import MyQstandardItem
-from main_datas import *
-from message import LoadingSplash
+from hierarchy import *
 from models import ModelsTabDel
 from tools import afficher_message as msg, get_bdd_paths
 from tools import find_global_point, open_folder, open_file, copy_to_clipboard, settings_read
-from tools import get_look_tableview, get_real_path_of_apn_file, settings_save
+from tools import get_look_tableview, get_real_path_of_apn_file, settings_save, browser_file
 from tools import get_look_treeview, settings_get, move_window_tool, MyContextMenu
 from translation_manage import *
 from ui_library import Ui_Library
@@ -22,7 +19,6 @@ from ui_library_modify import Ui_LibraryModify
 from ui_library_tab import Ui_LibraryTab
 from ui_library_tab_manage import Ui_LibraryTabManage
 from ui_library_synchro import Ui_LibrarySynchro
-from browser import browser_file
 
 tab_max_count = 11
 
@@ -187,9 +183,9 @@ class Library(QWidget):
         if not isinstance(tab_widget, LibraryTab):
             return
 
-        tab_widget.ui.library_hierarchy.setFocus()
+        tab_widget.ui.hierarchy.setFocus()
 
-        if tab_widget.library_model.rowCount() != 0:
+        if tab_widget.ui.hierarchy.cat_model.rowCount() != 0:
             return
 
         if not self.isVisible():
@@ -379,6 +375,7 @@ class Library(QWidget):
 
         if QApplication.keyboardModifiers() == Qt.ControlModifier:
             copy_to_clipboard(value=bdd_foler_path, show_msg=True)
+            return
 
         open_folder(bdd_foler_path)
 
@@ -387,6 +384,7 @@ class Library(QWidget):
 
         if QApplication.keyboardModifiers() == Qt.ControlModifier:
             copy_to_clipboard(value=bdd_path, show_msg=True)
+            return
 
         open_file(bdd_path)
 
@@ -635,7 +633,7 @@ class LibraryTabManage(QWidget):
 
         self.category_model.appendRow([QStandardItem(get_icon(external_bdd_nevaris_icon), bdd_type_nevaris)])
 
-        self.category_model.appendRow([QStandardItem(get_icon(excel_icon), type_excel)])
+        self.category_model.appendRow([QStandardItem(get_icon(excel_icon), bdd_type_excel)])
 
         self.category_model.appendRow([QStandardItem(get_icon(external_bdd_show_icon), self.tr("Autres"))])
 
@@ -671,7 +669,6 @@ class LibraryTabManage(QWidget):
                 continue
 
             if bdd_path_file.upper().endswith(".FIC"):
-
                 msg(titre=application_title,
                     message="Attention : Le format de fichier Fic de GIMI n'est plus pris en charge.\n"
                             "Vous pouvez désormais exporter votre bibliothèque GIMI au format XML.\n"
@@ -798,8 +795,8 @@ class LibraryTabManage(QWidget):
             regexp = f"{bdd_type_nevaris}|{bdd_type_nevaris_xlsx}"
             self.library_filter.setFilterRegExp(regexp)
 
-        elif current_bdd_type == type_bcm_c or current_bdd_type == bdd_type_bcm:
-            regexp = f"{type_bcm_c}|{bdd_type_bcm}"
+        elif current_bdd_type == bdd_type_bcm_c or current_bdd_type == bdd_type_bcm:
+            regexp = f"{bdd_type_bcm_c}|{bdd_type_bcm}"
             self.library_filter.setFilterRegExp(regexp)
 
         else:
@@ -867,18 +864,23 @@ class LibraryTabManage(QWidget):
 
     def category_convert(self, category_name: str) -> str:
 
-        if category_name in [bdd_type_xml, bdd_type_kukat, type_excel]:
+        if category_name in [bdd_type_xml, bdd_type_kukat, bdd_type_excel]:
             return category_name
 
         if category_name == bdd_type_fav:
             txt_favorite = self.tr("Favoris")
             return f"Allplan - {txt_favorite}"
 
-        if category_name in [bdd_type_bcm, type_bcm_c]:
+        if category_name in categories_bcm:
             return bdd_type_bcm
 
-        if category_name in [type_synermi, type_capmi, type_progemi, type_extern,
-                             type_gimi, type_allmetre_e, type_allmetre_a]:
+        if category_name in categories_excel:
+            return categories_excel
+
+        if category_name in categories_nevaris:
+            return "Nevaris"
+
+        if category_name in categories_extern:
             return self.tr("Autres")
 
         return category_name
@@ -940,6 +942,48 @@ class LibraryTabManage(QWidget):
         self.ui.library.setCurrentIndex(qm_current)
 
         return True
+
+    def library_select_row_by_qm(self, qm_model: QModelIndex) -> bool:
+
+        if not qm_check(qm_model):
+            print("library -- WidgetLibraryTabManage -- library_select_row_by_qm -- not qm_check(qm_model)")
+            return False
+
+        # ----------
+
+        qm_filter = self.library_filter.mapFromSource(qm_model)
+
+        if qm_check(qm_filter):
+            self.ui.library.setCurrentIndex(qm_filter)
+            return True
+
+        # ----------
+
+        qm_category = self.library_model.index(qm_model.row(), 3)
+
+        if not qm_check(qm_category):
+            print("library -- WidgetLibraryTabManage -- library_select_row_by_qm -- not qm_check(qm_category)")
+            return False
+
+        # ----------
+
+        category_name = qm_category.data()
+
+        if not isinstance(category_name, str):
+            print("library -- WidgetLibraryTabManage -- library_select_row_by_qm -- not isinstance(category_name, str)")
+            return False
+
+        self.catagory_choose(bdd_type=category_name)
+
+        # ----------
+
+        qm_filter = self.library_filter.mapFromSource(qm_model)
+
+        if qm_check(qm_filter):
+            self.ui.library.setCurrentIndex(qm_filter)
+            return True
+
+        return False
 
     def library_selection_changed(self, qm_current: QModelIndex):
 
@@ -1154,8 +1198,8 @@ class LibraryTabManage(QWidget):
 
             title = qs.text()
 
-            if title is None:
-                print("library -- WidgetLibraryTabManage -- library_find_all_titles -- title is None")
+            if not isinstance(title, str):
+                print("library -- WidgetLibraryTabManage -- library_find_all_titles -- not isinstance(title, str)")
                 continue
 
             if title == "":
@@ -1632,6 +1676,7 @@ class LibraryTabManage(QWidget):
             button.setIcon(icon)
 
         self.library_used_manage(used=used_new_state)
+        self.library_save_config()
 
     def library_used_manage(self, used: str):
 
@@ -1650,8 +1695,8 @@ class LibraryTabManage(QWidget):
 
     def library_help_show(self):
 
-        help_xml_path = f"{asc_exe_path}help\\library - xml.pdf"
-        help_excel_path = f"{asc_exe_path}help\\library - excel.pdf"
+        help_xml_path = f"{asc_folder_path}help\\library - xml.pdf"
+        help_excel_path = f"{asc_folder_path}help\\library - excel.pdf"
 
         if not os.path.exists(help_xml_path) and not os.path.exists(help_excel_path):
             msg(titre=self.widget_library.windowTitle(),
@@ -2018,9 +2063,12 @@ class LibraryTabManage(QWidget):
 
         bdd_path_file = bdd_path_file.replace("/", "\\")
 
-        search_path = self.library_model.findItems(bdd_path_file, Qt.MatchExactly, 2)
+        search_start = self.library_model.index(0, 2)
 
-        if len(search_path) != 0:
+        search = self.library_model.match(search_start, Qt.DisplayRole, bdd_path_file, 1, Qt.MatchExactly)
+
+        if len(search) != 0:
+            self.library_select_row_by_qm(qm_model=search[0])
             return False
 
         detection_tool = BddTypeDetection()
@@ -2058,6 +2106,10 @@ class LibraryTab(QWidget):
         self.ui = Ui_LibraryTab()
         self.ui.setupUi(self)
 
+        self.hierarchy: Hierarchy = self.ui.hierarchy
+
+        self.hierarchy.cat_filter_1.set_custom_filter(search_number="", search_type=pattern_filter)
+
         # -----------------------------------------------
         # Parent
         # -----------------------------------------------
@@ -2067,6 +2119,8 @@ class LibraryTab(QWidget):
         self.asc = self.widget_library.asc
         self.asc.langue_change.connect(lambda main=self: self.ui.retranslateUi(main))
 
+        self.hierarchy_main: Hierarchy = self.asc.ui.hierarchy
+
         self.allplan: AllplanDatas = self.widget_library.allplan
         self.catalog: CatalogDatas = self.widget_library.catalog
 
@@ -2074,7 +2128,7 @@ class LibraryTab(QWidget):
         # LOADING WIDGET LOADING
         # -----------------------------------------------
 
-        self.loading = LoadingSplash()
+        self.loading = self.asc.loading
 
         # -----------------------------------------------
         # LOADING WIDGET Update
@@ -2097,9 +2151,6 @@ class LibraryTab(QWidget):
 
         self.title = title
 
-        self.liste1 = None
-        self.liste2 = None
-
         self.close_ui = True
 
         self.folders_all_list = list()
@@ -2113,35 +2164,12 @@ class LibraryTab(QWidget):
         self.details_select = False
 
         # ---------------------------------------
-        # LOADING HIERARCHY - filter and model
-        # ---------------------------------------
-
-        self.library_model = QStandardItemModel()
-
-        self.library_search_filter = QSortFilterProxyModel()
-        self.library_search_filter.setRecursiveFilteringEnabled(True)
-        self.library_search_filter.setFilterCaseSensitivity(Qt.CaseInsensitive)
-        self.library_search_filter.setSortLocaleAware(True)
-
-        self.library_category_filter = QSortFilterProxyModel()
-        self.library_category_filter.setRecursiveFilteringEnabled(True)
-        self.library_category_filter.setFilterRole(user_data_type)
-
-        # ---------------------------------------
         # LOADING HIERARCHY
         # ---------------------------------------
 
-        get_look_treeview(self.ui.library_hierarchy)
-
-        self.ui.library_hierarchy.setModel(self.library_category_filter)
-
-        self.ui.library_hierarchy.expanded.connect(self.library_hierarchy_header_manage)
-        self.ui.library_hierarchy.collapsed.connect(self.library_hierarchy_header_manage)
-
-        self.ui.library_hierarchy.selectionModel().selectionChanged.connect(self.library_hierarchy_selection_changed)
-        # self.ui.library_hierarchy.clicked.connect(self.library_hierarchy_selection_changed)
-        self.ui.library_hierarchy.doubleClicked.connect(self.library_hierarchy_double_clicked)
-        self.ui.library_hierarchy.customContextMenuRequested.connect(self.library_hierarchy_menu_show)
+        self.hierarchy.selectionModel().selectionChanged.connect(self.library_hierarchy_selection_changed)
+        self.hierarchy.doubleClicked.connect(self.library_hierarchy_double_clicked)
+        self.hierarchy.customContextMenuRequested.connect(self.library_hierarchy_menu_show)
 
         # ---------------------------------------
         # LOADING SIGNALS - REFRESH
@@ -2153,15 +2181,21 @@ class LibraryTab(QWidget):
         # LOADING SIGNALS - EXPAND / COLLAPSE
         # ---------------------------------------
 
-        self.ui.library_expand_all.clicked.connect(self.library_hierarchy_expand_all)
-        self.ui.library_collapse_all.clicked.connect(self.library_hierarchy_collapse_all)
+        self.ui.library_expand_all.clicked.connect(self.expand_menu_show)
+        self.ui.library_collapse_all.clicked.connect(self.collapse_menu_show)
 
         # ---------------------------------------
         # LOADING SIGNALS - SEARCH
         # ---------------------------------------
 
-        self.ui.library_search.textChanged.connect(self.search_changed)
-        self.ui.library_search_clear.clicked.connect(self.search_clear)
+        self.search_filter_widget = SearchFiterWidget(asc=self.asc, filter_button=self.ui.search_bt)
+        self.search_filter_widget.modify_search_filter.connect(self.search_filter_changed)
+        self.search_filter_widget.cancel_search_filter.connect(self.search_clear)
+
+        self.ui.search_line.textChanged.connect(self.search_line_changed)
+
+        self.ui.search_bt.clicked.connect(self.search_filter_show)
+        self.ui.search_bt.customContextMenuRequested.connect(self.search_filter_show)
 
         # =============================================================
         # LOADING DETAILS - Model
@@ -2206,10 +2240,13 @@ class LibraryTab(QWidget):
 
         if self.current_mode == "Ajout":
 
+            # todo corriger bug + activer
+            self.hierarchy.setDragEnabled(False)
+
             self.ui.ok.setToolTip(self.tr("Ajouter les éléments sélectionnés"))
 
             self.ui.library_synchro.setVisible(True)
-            self.ui.library_synchro.setEnabled(self.library_model.rowCount() != 0)
+            self.ui.library_synchro.setEnabled(self.hierarchy.cat_model.rowCount() != 0)
 
             self.ui.library_details.setSelectionMode(QAbstractItemView.ExtendedSelection)
 
@@ -2217,6 +2254,8 @@ class LibraryTab(QWidget):
             self.manage_add_button()
 
         else:
+
+            self.hierarchy.setDragEnabled(False)
 
             self.ui.ok.setText(self.tr("Choisir"))
             self.ui.ok.setToolTip(self.tr("Choisir un attribut"))
@@ -2244,7 +2283,7 @@ class LibraryTab(QWidget):
                 self.ui.ok.setText(self.tr("Ajouter attribut"))
                 return
 
-            verification = self.verification_possibility()
+            verification = self.library_possible_to_add()
             self.ui.ok.setEnabled(verification)
 
             self.ui.ok.setText(self.tr("Ajouter"))
@@ -2258,25 +2297,28 @@ class LibraryTab(QWidget):
         if self.current_mode != "Ajout":
             return
 
-        if self.current_qs == self.catalog.cat_model.invisibleRootItem():
-            possibility = {folder_code: ""}
+        if self.current_qs == self.hierarchy_main.cat_model.invisibleRootItem():
+            possibility = [folder_code]
 
-        elif isinstance(self.current_qs, (Folder, Material, Component, Link)):
-            possibility: dict = self.current_qs.get_type_possibilities()
-            item_type = self.current_qs.data(user_data_type)
+        elif isinstance(self.current_qs, Folder):
+            possibility = [folder_code, material_code]
 
-            if item_type != link_code:
-                possibility[attribute_code] = ""
+        elif isinstance(self.current_qs, Material):
+            possibility = [material_code, component_code, link_code, attribute_code]
+
+        elif isinstance(self.current_qs, Component):
+            possibility = [component_code, link_code, attribute_code]
+
+        elif isinstance(self.current_qs, Link):
+            possibility = [component_code, link_code]
 
         else:
             return
 
-        if folder_code in possibility and self.bdd_type != bdd_type_xml:
-            possibility.pop(folder_code)
-
         self.ui.folder.setVisible(folder_code in possibility)
         self.ui.material.setVisible(material_code in possibility)
         self.ui.component.setVisible(component_code in possibility)
+        self.ui.link.setVisible(link_code in possibility)
         self.ui.attribute.setVisible(attribute_code in possibility)
         self.ui.none.setVisible(len(possibility) == 0)
 
@@ -2305,27 +2347,25 @@ class LibraryTab(QWidget):
         elif self.bdd_type == bdd_type_kukat:
             worker = ConvertKukat(allplan=self.allplan, file_path=self.bdd_path_file, bdd_title=self.title)
 
-        elif self.bdd_type == type_excel:
+        elif self.bdd_type == bdd_type_excel:
             if self.bdd_path_file.lower().endswith(".xlsx"):
                 worker = ConvertExcel(allplan=self.allplan, file_path=self.bdd_path_file, bdd_title=self.title)
             else:
                 worker = ConvertCSV(allplan=self.allplan, file_path=self.bdd_path_file, bdd_title=self.title)
 
-        elif self.bdd_type == bdd_type_bcm:
-            worker = ConvertBcmOuvrages(allplan=self.allplan, file_path=self.bdd_path_file, bdd_title=self.title)
+        elif self.bdd_type in [bdd_type_bcm, bdd_type_allmetre_e, bdd_type_allmetre_a]:
+            worker = ConvertBcmMaterial(allplan=self.allplan, file_path=self.bdd_path_file, bdd_title=self.title)
+            worker.errors_signal.connect(self.library_error_show)
 
-        elif self.bdd_type == type_bcm_c:
+        elif self.bdd_type == bdd_type_bcm_c:
             worker = ConvertBcmComposants(allplan=self.allplan, file_path=self.bdd_path_file, bdd_title=self.title)
 
-        elif self.bdd_type == type_allmetre_e or self.bdd_type == type_allmetre_a:
-            worker = ConvertAllmetre(allplan=self.allplan, file_path=self.bdd_path_file, bdd_title=self.title)
-
-        elif (self.bdd_type == type_synermi or self.bdd_type == type_capmi or self.bdd_type == type_progemi
-              or self.bdd_type == type_gimi or self.bdd_type == type_extern):
+        elif (self.bdd_type == bdd_type_synermi or self.bdd_type == bdd_type_capmi or self.bdd_type == bdd_type_progemi
+              or self.bdd_type == bdd_type_gimi or self.bdd_type == bdd_type_extern):
 
             worker = ConvertExtern(allplan=self.allplan, file_path=self.bdd_path_file, bdd_title=self.title)
 
-        elif self.bdd_type == type_mxdb:
+        elif self.bdd_type == bdd_type_mxdb:
 
             worker = ConvertMXDB(allplan=self.allplan, file_path=self.bdd_path_file, bdd_title=self.title)
 
@@ -2337,11 +2377,27 @@ class LibraryTab(QWidget):
 
             worker = ConvertNevarisExcel(allplan=self.allplan, file_path=self.bdd_path_file, bdd_title=self.title)
 
+        elif self.bdd_type == bdd_type_xpwe:
+
+            worker = ConvertXpwe(allplan=self.allplan, file_path=self.bdd_path_file, bdd_title=self.title)
+
+        elif self.bdd_type == bdd_type_team_system_xml:
+
+            worker = ConvertTeamSystemXml(allplan=self.allplan, file_path=self.bdd_path_file, bdd_title=self.title)
+
+        elif self.bdd_type == bdd_type_team_system_xlsx:
+
+            worker = ConvertTeamSystemXlsx(allplan=self.allplan, file_path=self.bdd_path_file, bdd_title=self.title)
+
         else:
-            self.loading_model_end(QStandardItemModel(), list(), list())
+            self.hierarchy.loading_model(QStandardItemModel(), list(), list())
+            self.library_load_end()
             return
 
-        worker.loading_completed.connect(self.loading_model_end)
+        worker.loading_completed.connect(self.hierarchy.loading_model)
+        worker.loading_completed.connect(self.library_load_end)
+
+        worker.errors_signal.connect(self.library_error_show)
 
         self.progression_show(self.tr("Chargement en cours ..."))
 
@@ -2351,130 +2407,26 @@ class LibraryTab(QWidget):
     def a___________________model_activation______():
         pass
 
-    def loading_model_end(self, model: QStandardItemModel, expanded_list: list, selection_list: list):
-
-        print(f"widget_onglet -- loading_model_end -- fin du chargement de {self.title}")
-
-        try:
-            self.library_model = model
-            self.library_search_filter.setSourceModel(self.library_model)
-
-            self.library_category_filter.setSourceModel(self.library_search_filter)
-
-        except Exception as erreur:
-            print(erreur)
-
-        if not debug:
-            self.library_category_filter.setFilterRegExp(pattern_filter)
-
-        self.ui.library_hierarchy.setModel(self.library_category_filter)
-
-        self.ui.library_refresh.setEnabled(True)
-        self.ui.library_synchro.setEnabled(
-            self.library_model.rowCount() != 0 and self.catalog.cat_model != 0)
-
-        if len(expanded_list) != 0:
-            self.ui.library_hierarchy.blockSignals(True)
-            self.library_hierarchy_expand_action(expanded_list=expanded_list)
-            self.ui.library_hierarchy.blockSignals(False)
-
-        elif self.library_model.rowCount() < 6:
-            self.ui.library_hierarchy.blockSignals(True)
-            self.ui.library_hierarchy.expandAll()
-            self.ui.library_hierarchy.blockSignals(False)
+    def library_load_end(self):
 
         self.loading.hide()
 
-        if self.ui.library_hierarchy.selectionModel() is None:
+        # --------------
+
+        self.ui.library_refresh.setEnabled(True)
+        self.ui.library_synchro.setEnabled(
+            self.hierarchy.cat_model.rowCount() != 0 and self.hierarchy_main.cat_model.rowCount() != 0)
+
+    def library_error_show(self, errors_list: list):
+
+        if len(errors_list) == 0:
             return
 
-        if len(selection_list) == 1:
-            self.library_hierarchy_select_action(selection_list=selection_list)
-
-        self.library_hierarchy_header_manage()
-
-    def library_hierarchy_header_manage(self):
-
-        if not debug:
-            self.ui.library_hierarchy.setColumnHidden(col_cat_number, True)
-
-        header = self.ui.library_hierarchy.header()
-
-        if header is None:
-            return
-
-        if self.library_model.rowCount() == 0:
-            return
-
-        if header.height() != 24:
-            header.setFixedHeight(24)
-
-        dimension_start = header.sectionSize(col_cat_value)
-
-        header.setSectionResizeMode(col_cat_value, QHeaderView.ResizeToContents)
-
-        dimension_end = header.sectionSize(col_cat_value)
-
-        if dimension_end < dimension_start:
-            header.setSectionResizeMode(col_cat_value, QHeaderView.Interactive)
-            header.resizeSection(col_cat_value, dimension_start)
-        else:
-            header.setSectionResizeMode(col_cat_value, QHeaderView.Interactive)
-
-        print("widget_onglet -- onglet_gestion_header -- fin")
-
-        if debug:
-            self.ui.library_hierarchy.resizeColumnToContents(col_cat_number)
-
-    def library_hierarchy_expand_action(self, expanded_list: list) -> None:
-        """
-        déplier une liste de qs ou de qm filtre ou qm model
-        :param expanded_list: liste à déplier
-        :return: None
-        """
-
-        if len(expanded_list) == 0:
-            return
-
-        # self.print_liste_expanded(liste_expanded)
-
-        for item in expanded_list:
-
-            if isinstance(item, MyQstandardItem):
-                qm_model: QModelIndex = item.index()
-
-            elif isinstance(item, QModelIndex):
-                qm_model = item
-
-            else:
-                continue
-
-            qm_filter = self.map_model_to_filter(qm_model=qm_model)
-
-            self.ui.library_hierarchy.setExpanded(qm_filter, True)
-
-    def library_hierarchy_select_action(self, selection_list: list):
-
-        qm_filter = None
-
-        for qs in selection_list:
-            qs: MyQstandardItem
-
-            qm_model = self.library_model.indexFromItem(qs)
-
-            qm_filter = self.map_model_to_filter(qm_model=qm_model)
-
-            if qm_filter is None:
-                return
-
-            self.ui.library_hierarchy.selectionModel().select(qm_filter,
-                                                              QItemSelectionModel.Select | QItemSelectionModel.Rows)
-
-        if isinstance(qm_filter, QModelIndex):
-            self.ui.library_hierarchy.scrollTo(qm_filter, QAbstractItemView.PositionAtCenter)
-
-        if len(selection_list) != 0:
-            self.library_hierarchy_selection_changed()
+        msg(titre=application_title,
+            message=self.tr("Une ou des erreurs ont été détectées"),
+            icone_avertissement=True,
+            details=errors_list,
+            afficher_details=True)
 
     @staticmethod
     def a___________________hierarchie_change______():
@@ -2484,49 +2436,7 @@ class LibraryTab(QWidget):
 
         self.details_select = False
 
-        selected_list: list = self.ui.library_hierarchy.selectionModel().selectedRows(col_cat_value)
-
-        current_item_type = ""
-        current_parent = None
-        invalid = QItemSelection()
-
-        if len(selected_list) == 0:
-            self.ui.library_hierarchy.selectionModel().select(invalid, QItemSelectionModel.Deselect)
-            self.library_hierarchy_selection_change()
-            return
-
-        for qm in reversed(selected_list):
-
-            qm: QModelIndex
-
-            model = qm.model()
-
-            qm_parent: QModelIndex = qm.parent()
-
-            qm_start = model.index(qm.row(), 0, qm_parent)
-            qm_end = model.index(qm.row(), model.columnCount() - 1, qm_parent)
-
-            item_type = qm.data(user_data_type)
-
-            if item_type == folder_code:
-
-                if current_parent is None:
-                    current_parent = qm_parent
-
-                elif current_parent != qm_parent:
-                    invalid.select(qm_start, qm_end)
-                    continue
-
-            if current_item_type == "":
-                current_item_type = item_type
-                continue
-
-            if current_item_type != "" and current_item_type == item_type:
-                continue
-
-            invalid.select(qm_start, qm_end)
-
-        self.ui.library_hierarchy.selectionModel().select(invalid, QItemSelectionModel.Deselect)
+        self.hierarchy.selection_manage()
 
         self.library_hierarchy_selection_change()
 
@@ -2535,19 +2445,21 @@ class LibraryTab(QWidget):
         if self.library_detail_model.rowCount() != 0:
             self.details_reset()
 
-        if self.library_model.rowCount() == 0:
+        if self.hierarchy.cat_model.rowCount() == 0:
             return
 
-        self.library_hierarchy_header_manage()
+        self.hierarchy.header_manage()
 
-        selection_qs_list = self.library_hierarchy_selection_qs_list_creation()
+        print(self.library_possible_to_add())
+
+        selection_qs_list = self.hierarchy.get_qs_selection_list()
 
         if len(selection_qs_list) != 1:
             self.manage_add_button()
             self.details_reset()
             return
 
-        qs: MyQstandardItem = selection_qs_list[col_cat_value]
+        qs: MyQstandardItem = selection_qs_list[0]
 
         if not isinstance(qs, MyQstandardItem):
             self.manage_add_button()
@@ -2575,200 +2487,50 @@ class LibraryTab(QWidget):
 
             qs_number: QStandardItem = qs.child(attribute_index, col_cat_number)
 
-            number = qs_number.text()
-
-            if number in current_list:
+            if not isinstance(qs_number, Info):
+                print("library -- LibraryTab -- library_hierarchy_selection_change -- not isinstance(qs_number, Info)")
                 continue
 
-            if number == attribute_default_base:
+            number_str = qs_number.text()
+
+            if number_str in current_list:
+                continue
+
+            if number_str == attribut_default_obj.current:
                 attrib_master = True
 
-            current_list.append(number)
+            current_list.append(number_str)
 
-            name = self.allplan.find_datas_by_number(number=number, key=code_attr_name)
+            attribute_obj = self.allplan.attributes_dict.get(number_str)
+
+            if not isinstance(attribute_obj, AttributeDatas):
+                print("library -- LibraryTab -- library_hierarchy_selection_change -- "
+                      "not isinstance(attribute_obj, AttributeDatas)")
+                continue
+
+            name = attribute_obj.name
 
             if not isinstance(name, str) or name == "":
                 continue
 
             value = qs_value.text()
 
-            datas_list.append([number, name, value])
+            datas_list.append([number_str, name, value])
 
         if not attrib_master:
-            datas_list.append([attribute_default_base, attribute_name_default_base, qs.text()])
+            datas_list.append([attribut_default_obj.current, attribute_name_default_base, qs.text()])
 
         datas_list.sort(key=lambda x: int(x[0]))
 
-        for number, name, value in datas_list:
-            self.details_add(number, name, value)
+        for number_str, name, value in datas_list:
+            self.details_add(number_str, name, value)
 
         self.details_header_manage()
 
         self.manage_add_button()
 
-    def library_hierarchy_selection_list_creation(self) -> list:
-        """
-        Liste la sélection en renvoyant une liste de qm filtre
-        :return: Liste qm filtre
-        """
-
-        if self.ui.library_hierarchy.selectionModel() is None:
-            return []
-
-        selection_list = self.ui.library_hierarchy.selectionModel().selectedRows(col_cat_value)
-
-        selection_list.sort()
-
-        return selection_list
-
-    def library_hierarchy_selection_qs_list_creation(self) -> list:
-        """
-        Liste les qs dans une liste
-        :return: Liste de qs
-        """
-
-        qs_list = list()
-
-        if self.ui.library_hierarchy.selectionModel() is None:
-            return qs_list
-
-        selection_list = self.library_hierarchy_selection_list_creation()
-
-        if len(selection_list) == 0:
-            return qs_list
-
-        for qm in selection_list:
-            qs = self.library_hierarchy_qs_by_qm(qm)
-
-            if qs is not None:
-                qs_list.append(qs)
-
-        return qs_list
-
-    def library_hierarchy_map_to_model(self, qm: QModelIndex):
-        """
-        rechercher le qm dans model_recherche
-        :param qm: qm_origine
-        :return: qm
-        :rtype: QModelIndex
-        """
-
-        if not qm_check(qm):
-            return None
-
-        current_model: QSortFilterProxyModel = qm.model()
-
-        if current_model is None:
-            return None
-
-        if current_model == self.library_model:
-            return qm
-
-        qm_source: QModelIndex = current_model.mapToSource(qm)
-
-        return self.library_hierarchy_map_to_model(qm_source)
-
-    def library_hierarchy_qs_by_qm(self, qm: QModelIndex):
-
-        if not qm_check(qm):
-            return None
-
-        qm_model: QModelIndex = self.library_hierarchy_map_to_model(qm)
-
-        if qm_model is None:
-            return None
-
-        qm = self.library_model.itemFromIndex(qm_model)
-
-        return qm
-
-    def map_filter_to_model(self, qm: QModelIndex, column: int):
-
-        if qm is None:
-            return None
-
-        row_index = qm.row()
-        column_index = qm.column()
-
-        model = qm.model()
-
-        if model is None:
-            return None
-
-        parent = qm.parent()
-
-        if parent is None:
-            parent = QModelIndex()
-
-        if column_index != column:
-
-            qm = model.index(row_index, column, parent)
-
-            if not qm_check(qm):
-                return None
-
-        if model == self.library_model:
-            return qm
-
-        if model == self.library_search_filter:
-
-            qm_model = self.library_search_filter.mapToSource(qm)
-
-            if not qm_check(qm_model):
-                return None
-
-            return qm_model
-
-        if model != self.library_category_filter:
-            return None
-
-        qm_filter = self.library_category_filter.mapToSource(qm)
-
-        if not qm_check(qm_filter):
-            return None
-
-        qm_model = self.library_search_filter.mapToSource(qm_filter)
-
-        if qm_check(qm_model):
-            return qm_model
-
-        return None
-
-    def map_model_to_filter(self, qm_model: QModelIndex):
-
-        if qm_model is None:
-            return None
-
-        model = qm_model.model()
-
-        if model is None:
-            return None
-
-        if model == self.library_category_filter:
-            return qm_model
-
-        if model == self.library_search_filter:
-
-            qm_category = self.library_category_filter.mapFromSource(qm_model)
-
-            if qm_check(qm_category):
-                return qm_category
-
-            return None
-
-        if model == self.library_model:
-
-            qm_search = self.library_search_filter.mapFromSource(qm_model)
-
-            if not qm_check(qm_search):
-                return None
-
-            qm_category = self.library_category_filter.mapFromSource(qm_search)
-
-            if qm_check(qm_category):
-                return qm_category
-
-        return None
+    def library_possible_to_add(self) -> bool:
+        return self.hierarchy.library_possible_to_add(library_treeview=self.hierarchy, qs_target=self.current_qs)
 
     @staticmethod
     def a___________________liste_detail______():
@@ -2797,7 +2559,7 @@ class LibraryTab(QWidget):
             if not isinstance(number, str):
                 continue
 
-            if number == attribute_default_base:
+            if number == attribut_default_obj.current:
                 continue
 
             if isinstance(self.current_qs, Folder) and number != "207":
@@ -2834,50 +2596,171 @@ class LibraryTab(QWidget):
         self.ui.library_details.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
 
     @staticmethod
-    def a___________________recherche______():
+    def a___________________search______():
         pass
 
-    def search_changed(self):
+    def search_line_changed(self):
 
-        if self.ui.library_search.text() == "":
+        if not self.ui.search_bt.isChecked():
+            return
 
-            self.ui.library_search.setStyleSheet("QLineEdit{border: 1px solid #8f8f91; "
-                                                 "border-top-left-radius: 5px; "
-                                                 "border-bottom-left-radius: 5px; "
-                                                 "padding-left: 5px; }")
-        else:
+        text = self.ui.search_line.text()
 
-            self.ui.library_search.setStyleSheet("QLineEdit{border: 2px solid orange; "
-                                                 "border-top-left-radius: 5px; "
-                                                 "border-bottom-left-radius: 5px; "
-                                                 "padding-left: 4px; }")
+        text = text.strip()
 
-        self.library_search_filter.setFilterRegExp(self.ui.library_search.text())
-        self.ui.library_hierarchy.blockSignals(True)
-        self.ui.library_hierarchy.expandAll()
-        self.ui.library_hierarchy.blockSignals(False)
-        self.library_hierarchy_header_manage()
+        if text != "" and len(text) > 1:
+            self.search_action(update=True)
+            return
+
+        if text == "":
+            self.search_clear()
+
+    def search_action(self, update=False):
+
+        if self.ui.search_bt.isChecked() and self.ui.search_line.text() != "":
+
+            if not update:
+                self.hierarchy.save_qm_model_expanded_list()
+
+                self.ui.search_line.setStyleSheet("QLineEdit{padding-left:4px; "
+                                                  "border: 2px solid orange;border-radius:5px; }")
+
+                self.ui.search_bt.setIcon(get_icon(search_clear_icon))
+
+                self.ui.search_bt.setToolTip(self.tr("Supprimer la recherche"))
+
+            self.search_refresh()
+            return
+
+        self.search_clear()
+        return
+
+    def search_refresh(self):
+
+        current_text = self.ui.search_line.text()
+
+        if current_text == "":
+            self.search_clear()
+            return
+
+        if not self.hierarchy.search_text(current_text=current_text,
+                                          search_column=self.search_filter_widget.search_column,
+                                          search_number=self.search_filter_widget.search_number,
+                                          search_type=self.search_filter_widget.search_type,
+                                          search_mode=self.search_filter_widget.search_mode,
+                                          search_case=self.search_filter_widget.search_case):
+            self.search_clear()
+            return
+
+        self.ui.search_bt.setChecked(True)
+
+    @staticmethod
+    def a___________________filter_setting_______________():
+        pass
+
+    def search_filter_show(self):
+
+        if not self.ui.search_bt.isChecked():
+            self.search_clear()
+            return
+
+        self.ui.search_bt.setChecked(False)
+
+        self.hierarchy.save_qm_model_expanded_list()
+
+        self.search_filter_widget.search_show(search_current=self.ui.search_line.text().strip())
+
+    def search_filter_enter_pressed(self):
+
+        if self.ui.search_bt.isChecked():
+            return
+
+        self.ui.search_bt.setChecked(True)
+
+        self.search_filter_show()
+
+    def search_filter_changed(self):
+
+        update = self.hierarchy.cat_filter_1.filterRegExp().pattern() != pattern_filter
+
+        self.ui.search_bt.setChecked(True)
+
+        self.search_action(update=update)
+
+    @staticmethod
+    def a___________________search_clear_______________():
+        pass
 
     def search_clear(self):
 
-        qm_selection = self.ui.library_hierarchy.selectionModel().currentIndex()
+        self.details_reset()
 
-        qm_model = self.map_filter_to_model(qm_selection, col_cat_value)
+        self.ui.search_bt.setChecked(False)
 
-        expanded_list = self.get_expanded_list()
+        self.ui.search_line.setStyleSheet("QLineEdit{padding-left:5px; border: 1px solid #8f8f91;border-radius:5px; }")
 
-        self.ui.library_search.clear()
+        self.ui.search_bt.setIcon(get_icon(search_icon))
+        self.ui.search_bt.setToolTip(self.tr("Lancer la recherche"))
 
-        self.restore_expanded_list(expanded_list)
+        # ----------------------------
 
-        qm_filter = self.map_model_to_filter(qm_model)
+        self.hierarchy.search_clear()
 
-        if not qm_check(qm_filter):
+    @staticmethod
+    def a___________________search_current_text_______________():
+        pass
+
+    def get_search_current_text(self):
+
+        if self.ui.library_details.hasFocus():
+
+            selected_items = self.ui.library_details.selectionModel().selectedRows(2)
+
+            if len(selected_items) != 0:
+
+                qm = selected_items[0]
+
+                if qm_check(qm):
+
+                    text_current = qm.data()
+
+                    if isinstance(text_current, str) and text_current != "":
+                        self.search_text(text_current=text_current)
+                        return
+
+        qm_filter_selection_list = self.hierarchy.get_qm_filter_selection_list()
+
+        if len(qm_filter_selection_list) != 1:
             return
 
-        self.ui.library_hierarchy.setCurrentIndex(qm_filter)
+        qm: QModelIndex = qm_filter_selection_list[0]
 
-        self.ui.library_hierarchy.scrollTo(qm_filter, QAbstractItemView.PositionAtCenter)
+        if not qm_check(qm):
+            return
+
+        text_current = qm.data()
+
+        if not isinstance(text_current, str) or text_current == "":
+            return
+
+        self.search_text(text_current=text_current)
+
+    def search_text(self, text_current: str):
+
+        if not isinstance(text_current, str):
+            return
+
+        if text_current == "":
+            return
+
+        if self.ui.search_bt.isChecked():
+            return
+
+        self.hierarchy.save_qm_model_expanded_list()
+
+        self.ui.search_line.setText(text_current)
+        self.ui.search_bt.setChecked(True)
+        self.search_filter_show()
 
     @staticmethod
     def a___________________ajouter_items______():
@@ -2885,9 +2768,9 @@ class LibraryTab(QWidget):
 
     def library_hierarchy_double_clicked(self):
 
-        if not self.verification_possibility():
+        if not self.library_possible_to_add():
 
-            qm: QModelIndex = self.ui.library_hierarchy.selectionModel().currentIndex()
+            qm: QModelIndex = self.hierarchy.selectionModel().currentIndex()
 
             if not qm_check(qm):
                 return None
@@ -2895,12 +2778,12 @@ class LibraryTab(QWidget):
             column = qm.column()
 
             if column != col_cat_value:
-                qm: QModelIndex = self.ui.library_hierarchy.model().index(qm.row(), col_cat_value, qm.parent())
+                qm: QModelIndex = self.hierarchy.model().index(qm.row(), col_cat_value, qm.parent())
 
                 if not qm_check(qm):
                     return None
 
-            qs = self.library_hierarchy_qs_by_qm(qm)
+            qs = self.hierarchy.get_qs_by_qm(qm=qm)
 
             if not isinstance(qs, MyQstandardItem):
                 return
@@ -2925,77 +2808,22 @@ class LibraryTab(QWidget):
                         type_bouton=QMessageBox.Ok)
                     return
 
-            if self.ui.library_hierarchy.isExpanded(qm):
-                self.ui.library_hierarchy.collapse(qm)
+            if self.hierarchy.isExpanded(qm):
+                self.hierarchy.collapse(qm)
             else:
-                self.ui.library_hierarchy.expand(qm)
-                self.ui.library_hierarchy.scrollTo(qm, QAbstractItemView.PositionAtCenter)
+                self.hierarchy.expand(qm)
+                self.hierarchy.scrollTo(qm, QAbstractItemView.PositionAtCenter)
 
             return
 
         self.ajouter_datas_action()
-
-    def verification_possibility(self) -> bool:
-
-        if self.current_mode != "Ajout":
-            return False
-
-        if self.current_qs is None:
-            print("widget_onglet -- verification_possibilite -- qs_actif is None")
-            return False
-
-        self.current_qs: MyQstandardItem
-
-        selection_list: list = self.ui.library_hierarchy.selectionModel().selectedRows(col_cat_value)
-
-        if len(selection_list) == 0:
-            self.ui.ok.setEnabled(False)
-            return False
-
-        for qm in selection_list:
-
-            qm: QModelIndex
-
-            qs = self.library_hierarchy_qs_by_qm(qm)
-
-            if not isinstance(qs, MyQstandardItem):
-                continue
-
-            item_type = qs.data(user_data_type)
-
-            if self.bdd_type != bdd_type_xml:
-
-                if item_type != material_code and item_type != component_code:
-                    return False
-
-            else:
-
-                if item_type != material_code and item_type != component_code and item_type != folder_code:
-                    return False
-
-            possibility = self.possibility(item_type)
-
-            if not possibility:
-                return False
-
-        return True
-
-    def possibility(self, item_type: str):
-
-        if self.current_qs == self.catalog.cat_model.invisibleRootItem():
-            return item_type == folder_code
-
-        if isinstance(self.current_qs, (Folder, Material, Component, Link)):
-            return self.current_qs.is_possible_to_add(item_type)
-
-        return False
 
     def remplacer_verif_possibilite(self) -> bool:
 
         if self.current_mode == "Ajout":
             return True
 
-        selection_list = self.ui.library_details.selectionModel().selectedRows(0)
+        selection_list = self.ui.library_details.selectionModel().selectedRows()
 
         if len(selection_list) == 0:
             return False
@@ -3018,7 +2846,7 @@ class LibraryTab(QWidget):
 
         if not self.details_select:
 
-            if not self.verification_possibility():
+            if not self.library_possible_to_add():
                 return
 
             self.add_items_action()
@@ -3033,71 +2861,81 @@ class LibraryTab(QWidget):
 
         self.catalog.change_made = True
 
-    def add_items_action(self):
+    def add_items_action(self) -> bool:
 
-        if not isinstance(self.current_qs, MyQstandardItem):
-            return
+        if not self.library_possible_to_add():
+            print("library -- LibraryTab -- add_items_action -- not self.library_possible_to_add()")
+            return False
 
-        selection_list: list = self.ui.library_hierarchy.selectionModel().selectedRows(col_cat_value)
+        # -------------
 
-        if len(selection_list) == 0:
-            self.widget_library.close()
-            return
+        qs_selection_list = self.hierarchy.get_qs_selection_list()
 
-        selection_list.sort()
+        if len(qs_selection_list) == 0:
+            print("library -- LibraryTab -- add_items_action -- len(qs_selection_list) == 0")
+            return False
 
-        qm = selection_list[0]
-        qs = self.library_hierarchy_qs_by_qm(qm)
+        qs_selection_list.sort()
 
-        if not isinstance(qs, MyQstandardItem):
-            print("library -- add_items_action -- not isinstance(qs, MyQstandardItem)")
-            return
+        # -------------
 
-        item_type = qs.data(user_data_type)
+        qs_first = qs_selection_list[0]
+
+        if not isinstance(qs_first, (Folder, Material, Component, Link)):
+            print("library -- LibraryTab -- add_items_action -- not isinstance(qs_first, MyQstandardItem)")
+            return False
+
+        item_type = qs_first.data(user_data_type)
+
         clipboard_datas = ClipboardDatas(item_type)
 
-        for qm in selection_list:
+        # -------------
 
-            if not qm_check(qm):
+        for qs_value in qs_selection_list:
+
+            if not isinstance(qs_value, MyQstandardItem):
+                print("library -- LibraryTab -- add_items_action -- not isinstance(qs_value, MyQstandardItem)")
                 continue
 
-            qs = self.library_hierarchy_qs_by_qm(qm)
+            # -------------
 
-            if not isinstance(qs, MyQstandardItem):
-                print("widget_onglet -- ajouter_datas_action -- qs is None2")
+            title = qs_value.text()
+
+            if not isinstance(title, str):
+                print("library -- LibraryTab -- add_items_action -- not isinstance(title, str)")
                 continue
 
-            item_type = qs.data(user_data_type)
+            # -------------
+            qs_parent = qs_value.parent()
 
-            if self.bdd_type != bdd_type_xml:
+            if not isinstance(qs_parent, QStandardItem):
+                qs_parent = self.hierarchy.cat_model.invisibleRootItem()
 
-                if item_type != material_code and item_type != component_code:
-                    continue
+            # -------------
 
-            else:
+            row_current = qs_value.row()
 
-                if item_type != material_code and item_type != component_code and item_type != folder_code:
-                    continue
+            # -------------
 
-            possibility = self.possibility(item_type)
+            qs_desc = qs_parent.child(row_current, col_cat_desc)
 
-            if not possibility:
+            if not isinstance(qs_desc, Info):
+                print("library -- LibraryTab -- add_items_action -- not isinstance(qs_desc, Info)")
                 continue
 
-            qs_parent = qs.parent()
+            # -------------
 
-            if qs_parent is None:
-                qs_parent = self.library_model.invisibleRootItem()
+            qs_number = qs_parent.child(row_current, col_cat_number)
 
-            child_index = qs.row()
-            title = qs.text()
-
-            qs_list = self.copier_recherche_colonnes(qs_parent, child_index)
-
-            if len(qs_list) == 0:
+            if not isinstance(qs_number, Info):
+                print("library -- LibraryTab -- add_items_action -- not isinstance(qs_desc, Info)")
                 continue
 
-            clipboard_datas.append(title, qs_list)
+            # -------------
+
+            clipboard_datas.append(key=title, value=[qs_value, qs_desc, qs_number])
+
+            # -------------
 
         self.ajouter_signal.emit(clipboard_datas, ClipboardDatas(item_type))
 
@@ -3112,23 +2950,23 @@ class LibraryTab(QWidget):
         selection_list: list = self.ui.library_details.selectionModel().selectedRows()
 
         if len(selection_list) == 0:
-            return
+            return False
 
         selection_list.sort()
 
         # ---------------------------
 
-        hierarchy_selected_list: list = self.ui.library_hierarchy.selectionModel().selectedRows()
+        hierarchy_selected_list: list = self.hierarchy.get_qm_filter_selection_list()
 
         if len(hierarchy_selected_list) != 1:
-            return
+            return False
 
         hierarchy_qm = hierarchy_selected_list[0]
 
         if not qm_check(hierarchy_qm):
             return
 
-        hierarchy_qs = self.library_hierarchy_qs_by_qm(qm=hierarchy_qm)
+        hierarchy_qs = self.hierarchy.get_qs_by_qm(qm=hierarchy_qm)
 
         if not isinstance(hierarchy_qs, (Folder, Material, Component)):
             return
@@ -3220,12 +3058,12 @@ class LibraryTab(QWidget):
 
         self.catalog.attribute_paste_action(clipboard_attribute=clipboard, title="", id_ele="0")
 
-        filter_selection_list = self.catalog.get_filter_selection_list()
+        filter_selection_list = self.hierarchy_main.get_qm_filter_selection_list()
 
         if len(filter_selection_list) == 0:
             return
 
-        self.catalog.catalog_select_action(selected_list=filter_selection_list, scrollto=False)
+        self.hierarchy_main.select_list(selected_list=filter_selection_list, scrollto=False)
 
     def add_clipboard(self, title: str, defaut_dict: dict, hierarchy_datas: dict, clipboard: ClipboardDatas) -> bool:
 
@@ -3254,7 +3092,7 @@ class LibraryTab(QWidget):
             if len(defaut_dict) == 1:
                 return False
 
-            qs_temp_list = self.allplan.creation.attribute_line(value=value, number=number)
+            qs_temp_list = self.allplan.creation.attribute_line(value=value, number_str=number)
 
             if not isinstance(qs_temp_list, list):
                 return False
@@ -3294,118 +3132,24 @@ class LibraryTab(QWidget):
         self.widget_library.librairie_reception_valeur(number=number, value=value)
         self.widget_library.close()
 
-    def copier_recherche_colonnes(self, qs_parent: MyQstandardItem, child_index: int):
-
-        qs_list = list()
-
-        if not isinstance(qs_parent, QStandardItem):
-            return list()
-
-        for column_index in range(qs_parent.columnCount()):
-
-            qs = qs_parent.child(child_index, column_index)
-
-            if not isinstance(qs, MyQstandardItem):
-                return list()
-
-            item_type = qs.data(user_data_type)
-
-            if qs is None:
-                print("onglet_hierarchie -- copier_colonnes --> qs is None")
-                return list()
-
-            qs_cloned: MyQstandardItem = qs.clone_creation()
-            qs.clone_children(qs, qs_cloned)
-
-            if column_index == col_cat_value:
-
-                self.link_evaluate(qs_cloned)
-
-                if item_type == component_code:
-                    self.formula_add(qs_cloned)
-
-            qs_list.append(qs_cloned)
-
-        if len(qs_list) != qs_parent.columnCount():
-            print("widget_onglet -- copier_colonnes --> len(liste_qs) != columnCount()")
-            return list()
-
-        return qs_list
-
-    def link_evaluate(self, qs: MyQstandardItem):
-
-        if qs is None:
-            return
-
-        if not isinstance(qs, Folder) and not isinstance(qs, Material):
-            return
-
-        if not qs.hasChildren():
-            return
-
-        children_count = qs.rowCount()
-
-        for index_child in range(children_count):
-
-            qs_child = qs.child(index_child, col_cat_value)
-
-            if not isinstance(qs_child, Link):
-                self.link_evaluate(qs_child)
-                continue
-
-            self.link_copy_manage(qs_child=qs_child)
-
     def link_copy_manage(self, qs_child: MyQstandardItem):
 
         current_txt = self.current_qs.text()
-        # material_txt = qs_parent.text()
-        # print(material_txt)
         link_text = qs_child.text()
 
         if not isinstance(current_txt, str) or not isinstance(link_text, str):
             return False
 
-        if current_txt.upper() in material_with_link_list:
-            print("Impossible : de créer un lien dans un ouvrage étant utilisé en tant que lien")
+        link_text_upper = link_text.upper()
+
+        if link_text_upper == current_txt.upper():
+            print("Impossible : link_text_upper == current_txt")
             return False
 
-        if link_text.upper() not in material_with_link_list:
+        if link_text_upper not in material_upper_list:
+            print(f"Impossible : L'ouvrage {link_text} n'existe pas")
+            return False
 
-            serach_link = self.library_model.findItems(link_text, Qt.MatchExactly | Qt.MatchRecursive, col_cat_value)
-
-            if len(serach_link) == 0:
-                print("Impossible : l'ouvrage du lien n'existe pas dans le catalogue et dans la bible externe")
-                return False
-
-            qs_material = serach_link[0]
-
-            if not isinstance(qs_material, MyQstandardItem):
-                return False
-
-            children_count = qs_material.rowCount()
-
-            if children_count == 0:
-                print("Impossible : l'ouvrage du lien n'a pas d'enfants")
-                return False
-
-            children_list = qs_material.get_children_type_list()
-
-            if link_code in children_list:
-                print("Impossible : l'ouvrage du lien contient des liens")
-                return False
-
-            if component_code not in children_list:
-                print("Impossible : l'ouvrage du lien ne contient pas de composants")
-                return False
-
-            print("Possible : l'ouvrage du lien n'existe pas --> copie des composants à la place du lien")
-            return True
-
-        if link_text not in link_list:
-            print("Possible : ce lien n'existe pas mais l'ouvrage existe --> copie du lien + modif ouvrage")
-            return True
-
-        print("Possible : ce lien existe déjà --> copie du lien")
         return True
 
     def formula_add(self, qs: MyQstandardItem):
@@ -3423,11 +3167,11 @@ class LibraryTab(QWidget):
         if unit is None:
             unit = "m²"
 
-        unit = self.allplan.convert_unit(unit)
+        unit = self.allplan.convert_unit(unit=unit)
 
         formula = self.allplan.recherche_formule_defaut(unit)
 
-        qs_list = self.allplan.creation.attribute_line(value=formula, number="267")
+        qs_list = self.allplan.creation.attribute_line(value=formula, number_str="267")
 
         insert_index = qs.get_attribute_insertion_index("267")
 
@@ -3450,14 +3194,14 @@ class LibraryTab(QWidget):
 
         attribut_all = dict()
 
-        search_start = self.library_model.index(0, 0)
+        search_start = self.hierarchy.cat_model.index(0, 0)
 
         # --------------
         # Folder
         # --------------
 
-        qm_folders_all_list = self.library_model.match(search_start, user_data_type, folder_code, -1,
-                                                       Qt.MatchExactly | Qt.MatchRecursive)
+        qm_folders_all_list = self.hierarchy.cat_model.match(search_start, user_data_type, folder_code, -1,
+                                                             Qt.MatchExactly | Qt.MatchRecursive)
 
         if len(qm_folders_all_list) != 0:
             folders_list = self.get_attributes(search_list=qm_folders_all_list, item_type=folder_code)
@@ -3469,8 +3213,8 @@ class LibraryTab(QWidget):
         # Material
         # --------------
 
-        qm_materials_all_list = self.library_model.match(search_start, user_data_type, material_code, -1,
-                                                         Qt.MatchExactly | Qt.MatchRecursive)
+        qm_materials_all_list = self.hierarchy.cat_model.match(search_start, user_data_type, material_code, -1,
+                                                               Qt.MatchExactly | Qt.MatchRecursive)
 
         if len(qm_materials_all_list) != 0:
             materials_list = self.get_attributes(search_list=qm_materials_all_list, item_type=material_code)
@@ -3482,8 +3226,8 @@ class LibraryTab(QWidget):
         # Component
         # --------------
 
-        qm_component_all_list = self.library_model.match(search_start, user_data_type, component_code, -1,
-                                                         Qt.MatchExactly | Qt.MatchRecursive)
+        qm_component_all_list = self.hierarchy.cat_model.match(search_start, user_data_type, component_code, -1,
+                                                               Qt.MatchExactly | Qt.MatchRecursive)
 
         if len(qm_component_all_list) != 0:
             components_list = self.get_attributes(search_list=qm_component_all_list, item_type=component_code)
@@ -3508,7 +3252,7 @@ class LibraryTab(QWidget):
 
         for qm in search_list:
 
-            qs = self.library_hierarchy_qs_by_qm(qm=qm)
+            qs = self.hierarchy.get_qs_by_qm(qm=qm)
 
             if not isinstance(qs, MyQstandardItem):
                 continue
@@ -3548,7 +3292,7 @@ class LibraryTab(QWidget):
         materials_list = list()
         components_list = list()
 
-        selection_list = self.ui.library_hierarchy.selectionModel().selectedRows()
+        selection_list = self.hierarchy.selectionModel().selectedRows()
 
         if len(selection_list) == 0:
             return attribut_select
@@ -3558,12 +3302,14 @@ class LibraryTab(QWidget):
             if not qm_check(qm):
                 continue
 
+            qm: QModelIndex
+
             item_type = qm.data(user_data_type)
 
             if item_type != folder_code and item_type != material_code and item_type != component_code:
                 continue
 
-            qs_current = self.library_hierarchy_qs_by_qm(qm=qm)
+            qs_current = self.hierarchy.get_qs_by_qm(qm=qm)
 
             if not isinstance(qs_current, MyQstandardItem):
                 continue
@@ -3664,7 +3410,7 @@ class LibraryTab(QWidget):
 
     def library_synchro_clicked(self):
 
-        if self.library_model.rowCount() == 0:
+        if self.hierarchy.cat_model.rowCount() == 0:
             return
 
         attributes_select = self.get_attributes_selection()
@@ -3729,7 +3475,7 @@ class LibraryTab(QWidget):
 
         self.catalog.library_synchro_end()
 
-        self.catalog.undo_library_synchro()
+        self.catalog.history_library_synchro()
 
         if synchro_count == 1:
             text = self.tr("élément à été synchronisé.")
@@ -3767,7 +3513,7 @@ class LibraryTab(QWidget):
 
                 qs_number = qs.child(index_row, col_cat_number)
 
-                if not isinstance(qs_number, Attribute):
+                if not isinstance(qs_number, Info):
                     continue
 
                 number = qs_number.text()
@@ -3791,7 +3537,7 @@ class LibraryTab(QWidget):
 
                 qs_index = qs.child(index_row, col_cat_index)
 
-                if not isinstance(qs_index, Attribute):
+                if not isinstance(qs_index, Info):
                     continue
 
                 index_value = qs_index.text()
@@ -3818,13 +3564,6 @@ class LibraryTab(QWidget):
 
         self.details_select = False
 
-        qm: QModelIndex = self.ui.library_hierarchy.indexAt(point)
-
-        if not qm_check(qm):
-            return
-
-        item_type = qm.data(user_data_type)
-
         menu = MyContextMenu()
 
         if self.ui.ok.isEnabled():
@@ -3836,121 +3575,50 @@ class LibraryTab(QWidget):
 
         menu.add_title(title=self.tr("Affichage"))
 
-        menu.add_action(qicon=get_icon(expand_all_icon),
-                        title=self.tr("Déplier tous"),
-                        action=self.library_hierarchy_expand_all)
+        # ------------------------------
 
-        menu.add_action(qicon=get_icon(collapse_all_icon),
-                        title=self.tr("Replier tous"),
-                        action=self.library_hierarchy_collapse_all)
+        if self.ui.library_expand_all.isEnabled():
+            expand_action = menu.add_action(qicon=get_icon(expand_all_icon),
+                                            title=self.tr("Déplier"),
+                                            tooltips=self.ui.library_expand_all.toolTip(),
+                                            short_link=self.ui.library_expand_all.whatsThis())
 
-        if item_type != folder_code and item_type != material_code:
-            menu.exec_(self.ui.library_hierarchy.mapToGlobal(point))
-            return
+            expand_action.setMenu(self.hierarchy.expand_menu_creation())
 
-        menu.addSeparator()
+        # ------------------------------
 
-        if self.ui.library_hierarchy.isExpanded(qm):
+        if self.ui.library_collapse_all.isEnabled():
+            collapse_action = menu.add_action(qicon=get_icon(collapse_all_icon),
+                                              title=self.tr("Replier"),
+                                              tooltips=self.ui.library_collapse_all.toolTip(),
+                                              short_link=self.ui.library_collapse_all.whatsThis())
 
-            menu.add_action(qicon=get_icon(collapse_all_icon),
-                            title=self.tr("Replier tous les enfants de cet élément"),
-                            action=lambda: self.collapse_all_children(qm))
+            collapse_action.setMenu(self.hierarchy.collapse_menu_creation())
 
-        else:
+        # ------------------------------
 
-            menu.add_action(qicon=get_icon(expand_all_icon),
-                            title=self.tr("Déplier tous les enfants de cet élément"),
-                            action=lambda: self.expand_all_children(qm))
+        menu.exec_(self.hierarchy.mapToGlobal(point))
 
-        menu.exec_(self.ui.library_hierarchy.mapToGlobal(point))
+    @staticmethod
+    def a___________________expand_buttons______():
+        pass
 
-    def library_hierarchy_expand_all(self):
+    def expand_menu_show(self):
 
-        qm_filter = self.ui.library_hierarchy.selectionModel().currentIndex()
+        expand_menu = self.hierarchy.expand_menu_creation()
+        expand_menu.exec_(find_global_point(self.ui.library_expand_all))
 
-        self.ui.library_hierarchy.blockSignals(True)
-        self.ui.library_hierarchy.expandAll()
-        self.ui.library_hierarchy.blockSignals(False)
+    def expand_end(self):
+        pass
 
-        if not qm_check(qm_filter):
-            return
+    @staticmethod
+    def a___________________collapse_buttons______():
+        pass
 
-        self.ui.library_hierarchy.setCurrentIndex(qm_filter)
+    def collapse_menu_show(self):
 
-        self.ui.library_hierarchy.scrollTo(qm_filter, QAbstractItemView.PositionAtCenter)
-
-        self.library_hierarchy_header_manage()
-
-    def expand_all_children(self, qm: QModelIndex):
-
-        qm_filter = self.ui.library_hierarchy.selectionModel().currentIndex()
-
-        self.ui.library_hierarchy.blockSignals(True)
-        self.expand_all_children_action(qm)
-        self.ui.library_hierarchy.blockSignals(False)
-
-        if not qm_check(qm_filter):
-            return
-
-        self.ui.library_hierarchy.setCurrentIndex(qm_filter)
-
-        self.ui.library_hierarchy.scrollTo(qm_filter, QAbstractItemView.PositionAtCenter)
-
-        self.library_hierarchy_header_manage()
-
-    def expand_all_children_action(self, qm_parent: QModelIndex):
-
-        self.ui.library_hierarchy.blockSignals(True)
-
-        self.ui.library_hierarchy.setExpanded(qm_parent, True)
-
-        row_count = self.library_category_filter.rowCount(qm_parent)
-
-        for row_index in range(row_count):
-
-            qm_child = self.library_category_filter.index(row_index, col_cat_value, qm_parent)
-
-            if not qm_check(qm_child):
-                continue
-
-            ele_type = qm_child.data(user_data_type)
-
-            if ele_type == component_code:
-                self.ui.library_hierarchy.blockSignals(False)
-                return
-
-            self.expand_all_children_action(qm_child)
-
-        self.ui.library_hierarchy.blockSignals(False)
-
-    def library_hierarchy_collapse_all(self):
-        self.ui.library_hierarchy.blockSignals(True)
-        self.ui.library_hierarchy.collapseAll()
-        self.ui.library_hierarchy.blockSignals(False)
-
-        self.library_hierarchy_header_manage()
-
-        self.ui.library_hierarchy.setCurrentIndex(QModelIndex())
-
-        # self.details_reset()
-
-    def collapse_all_children(self, qm: QModelIndex):
-        self.ui.library_hierarchy.blockSignals(True)
-        self.collapse_all_children_action(qm)
-        self.ui.library_hierarchy.blockSignals(False)
-
-        self.library_hierarchy_header_manage()
-
-    def collapse_all_children_action(self, qm: QModelIndex):
-
-        self.ui.library_hierarchy.setExpanded(qm, False)
-
-        children_count = self.library_category_filter.rowCount(qm)
-
-        for child_index in range(children_count):
-            qm_child = qm.child(child_index, 0)
-
-            self.collapse_all_children_action(qm_child)
+        collapse_menu = self.hierarchy.collapse_menu_creation()
+        collapse_menu.exec_(find_global_point(self.ui.library_collapse_all))
 
     def get_expanded_list(self):
 
@@ -3958,11 +3626,11 @@ class LibraryTab(QWidget):
 
         def recurse(qm_parent: QModelIndex):
 
-            row_count = self.library_category_filter.rowCount(qm_parent)
+            row_count = self.hierarchy.cat_filter_2.rowCount(qm_parent)
 
             for row_index in range(row_count):
 
-                qm_category = self.library_category_filter.index(row_index, col_cat_value, qm_parent)
+                qm_category = self.hierarchy.cat_filter_2.index(row_index, col_cat_value, qm_parent)
 
                 if not qm_check(qm_category):
                     continue
@@ -3972,38 +3640,38 @@ class LibraryTab(QWidget):
                 if ele_type == component_code:
                     continue
 
-                qm_model = self.map_filter_to_model(qm=qm_category, column=col_cat_value)
+                qm_model = self.hierarchy.map_to_model(qm=qm_category)
 
                 if qm_model is None:
                     continue
 
                 expanded_list.append(qm_model)
 
-                if self.library_category_filter.hasChildren(qm_category):
+                if self.hierarchy.cat_filter_2.hasChildren(qm_category):
                     recurse(qm_parent=qm_category)
 
         recurse(QModelIndex())
 
-        self.library_model.invisibleRootItem()
+        self.hierarchy.cat_model.invisibleRootItem()
 
         return expanded_list
 
     def restore_expanded_list(self, expanded_list: list):
 
-        self.ui.library_hierarchy.blockSignals(True)
+        self.hierarchy.blockSignals(True)
 
-        self.ui.library_hierarchy.collapseAll()
+        self.hierarchy.collapseAll()
 
         for qm_model in expanded_list:
 
-            qm_filter = self.map_model_to_filter(qm_model)
+            qm_filter = self.hierarchy.map_to_filter(qm=qm_model)
 
             if not qm_check(qm_filter):
                 continue
 
-            self.ui.library_hierarchy.expand(qm_filter)
+            self.hierarchy.expand(qm_filter)
 
-        self.ui.library_hierarchy.blockSignals(False)
+        self.hierarchy.blockSignals(False)
 
     @staticmethod
     def a___________________menu_details______():
@@ -4090,6 +3758,36 @@ class LibraryTab(QWidget):
 
             self.ui.bible_splitter.setSizes(sizes_list)
             return
+
+        if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter and self.ui.search_line.hasFocus():
+            self.search_filter_enter_pressed()
+            return
+
+        if event.modifiers() == Qt.ControlModifier and event.key() == Qt.Key_F:
+
+            if self.ui.search_bt.isChecked():
+                return
+
+            self.get_search_current_text()
+
+    def dragEnterEvent(self, event: QDragEnterEvent):
+
+        super().dragEnterEvent(event)
+
+        if event.mimeData().hasUrls():
+
+            urls = event.mimeData().urls()
+
+            if len(urls) != 1:
+                event.ignore()
+                return
+
+            self.widget_library.tab_bar.setCurrentIndex(0)
+
+            event.accept()
+            return
+
+        event.ignore()
 
     @staticmethod
     def a___________________end______():
@@ -4306,7 +4004,8 @@ class LibraryModify(QWidget):
                          f"{file_txt} CSV": [".csv"],
                          f"{file_txt} FIC": [".FIC"],
                          f"{file_txt} KAT": [".KAT"],
-                         f"{file_txt} MXDB": [".mxdb"]}
+                         f"{file_txt} MXDB": [".mxdb"],
+                         f"{file_txt} XPWE": [".xpwe"]}
 
         dict_favorites_allplan = get_favorites_allplan_dict()
 
@@ -4518,22 +4217,24 @@ class LibraryModify(QWidget):
         if self.bdd_type == bdd_type_xml and "path_cat" in config_datas:
             key = "path_cat"
 
-        elif self.bdd_type == type_excel and "path_excel" in config_datas:
+        elif self.bdd_type == bdd_type_excel and "path_excel" in config_datas:
             key = "path_excel"
 
         elif self.bdd_type == bdd_type_fav and "path_favorites" in config_datas:
             key = "path_favorites"
 
-        elif (self.bdd_type == bdd_type_bcm or self.bdd_type == type_bcm_c) and "path_bcm" in config_datas:
+        elif (self.bdd_type == bdd_type_bcm or self.bdd_type == bdd_type_bcm_c) and "path_bcm" in config_datas:
             key = "path_bcm"
 
         elif self.bdd_type == bdd_type_kukat and "path_kukat" in config_datas:
             key = "path_kukat"
 
-        elif (self.bdd_type == type_allmetre_e or self.bdd_type == type_allmetre_a) and "path_alltop" in config_datas:
+        elif ((
+                      self.bdd_type == bdd_type_allmetre_e or self.bdd_type == bdd_type_allmetre_a)
+              and "path_alltop" in config_datas):
             key = "path_alltop"
 
-        elif self.bdd_type == type_gimi and "path_gimi" in config_datas:
+        elif self.bdd_type == bdd_type_gimi and "path_gimi" in config_datas:
             key = "path_gimi"
 
         else:
@@ -5208,25 +4909,33 @@ class LibrarySynchro(QWidget):
             qs_master.setData(type_current, user_data_type)
             qs_master.setSelectable(False)
 
-            for number in list_current:
+            for number_str in list_current:
 
-                if number in self.attributes_dict:
+                if number_str in self.attributes_dict:
 
-                    name = self.attributes_dict[number]
+                    name = self.attributes_dict[number_str]
 
                 else:
-                    name = self.allplan.find_datas_by_number(number=number, key=code_attr_name)
 
-                    self.attributes_dict[number] = name
+                    attribute_obj = self.allplan.attributes_dict.get(number_str)
+
+                    if not isinstance(attribute_obj, AttributeDatas):
+                        print("library -- LibrarySynchro -- synchro_add_type -- "
+                              "not isinstance(attribute_obj, AttributeDatas)")
+                        continue
+
+                    name = attribute_obj.name
+
+                    self.attributes_dict[number_str] = name
 
                 if name == "":
                     continue
 
-                title = f"{number} - {name}"
+                title = f"{number_str} - {name}"
 
                 qs = QStandardItem(get_icon(attribute_icon), title)
                 qs.setData(type_current, user_data_type)
-                qs.setData(number, user_data_number)
+                qs.setData(number_str, user_data_number)
 
                 qs_master.appendRow(qs)
 

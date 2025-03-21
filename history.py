@@ -8,7 +8,6 @@ from tools import changer_selection_apparence, taille_police_menu, menu_ht_ligne
 
 
 class WidgetHistory(QListWidget):
-    """Script pour le widget type_surfaces"""
 
     undo_selection_signal = pyqtSignal(list)
     redo_selection_signal = pyqtSignal(list)
@@ -20,7 +19,6 @@ class WidgetHistory(QListWidget):
 
         self.setWindowFlags(Qt.Popup)
 
-        self.history = list()
         self.mode_current = mode_current
 
         self.selected_events = list()
@@ -44,33 +42,23 @@ class WidgetHistory(QListWidget):
 
         self.clear()
 
-        liste = list()
+        for event, action in reversed(dict_actions.items()):
 
-        for event, datas in reversed(dict_actions.items()):
+            if not isinstance(action, ActionInfo):
+                continue
 
-            datas: ActionInfo
-            data: dict = datas.data
-
-            nom_action = data.get("nom_action", "")
-
-            qlistwidgetitem = QListWidgetItem(nom_action)
+            qlistwidgetitem = QListWidgetItem(action.action_name)
             qlistwidgetitem.setData(index_action, event)
 
             font = qlistwidgetitem.font()
             font.setPointSize(taille_police_menu)
             qlistwidgetitem.setFont(font)
 
-            if "icone" in data:
-                icone: QIcon = data["icone"]
-                qlistwidgetitem.setIcon(icone)
+            qlistwidgetitem.setIcon(action.action_icon)
 
-            if "tooltips" in data:
-                tooltips = data["tooltips"]
-                qlistwidgetitem.setToolTip(tooltips)
+            qlistwidgetitem.setToolTip(action.action_tooltips)
 
             self.addItem(qlistwidgetitem)
-
-        self.history = liste
 
     def item_hovered(self, item: QListWidgetItem):
 

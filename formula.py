@@ -5,7 +5,7 @@
 from allplan_manage import *
 from attribute_add import AttributesWidget, NumericSortProxyModel
 from catalog_manage import CatalogDatas
-from tools import get_look_tableview, move_window_tool, recherche_image, get_look_combobox, qm_check
+from tools import get_look_tableview, move_window_tool, recherche_image, get_look_combobox, qm_check, find_new_title
 from tools import help_open_link
 from tools import taille_police_menu, find_global_point, settings_save, MyContextMenu
 from translation_manage import get_code_langue
@@ -286,7 +286,8 @@ class Formula(QWidget):
         if close_action:
             self.close()
 
-        self.modif_formule.emit(self.value_widget, self.ui.valeur_attr.toPlainText(), position)
+        self.modif_formule.emit(self.value_widget, formula, position)
+        self.formule_originale = formula
 
     @staticmethod
     def a___________________favoris______():
@@ -296,7 +297,7 @@ class Formula(QWidget):
 
         modifiers = QApplication.keyboardModifiers()
 
-        if modifiers == Qt.ControlModifier:
+        if modifiers == Qt.ControlModifier or modifiers == Qt.ShiftModifier:
             self.afficher_widget_favoris()
             return
 
@@ -312,44 +313,44 @@ class Formula(QWidget):
 
         datas = settings_read(formula_fav_config_file)
 
-        if len(datas) != 0:
+        if len(datas) == 0:
+            datas = self.widget_formula_fav.formula_initialization()
 
-            liste_qmenu = list()
+        liste_qmenu = list()
 
-            a = self.tr("Enregistrer cette formule dans")
+        a = self.tr("Enregistrer cette formule dans")
 
-            for family_title, family_datas in datas.items():
+        for family_title, family_datas in datas.items():
 
-                family_datas: dict
+            family_datas: dict
 
-                family_icon = family_datas.get("icon", "")
+            family_icon = family_datas.get("icon", "")
 
-                family_icon = recherche_image(image_name=family_icon, image_default="attribute_model_show.svg")
+            family_icon = recherche_image(image_name=family_icon, image_default="attribute_model_show.svg")
 
-                item = MyContextMenu(title=family_title, qicon=get_icon(family_icon))
+            item = MyContextMenu(title=family_title, qicon=get_icon(family_icon))
 
-                item.add_action(qicon=get_icon(save_icon),
-                                title=f"{a} '{family_title}'",
-                                action=lambda val=family_title: self.formule_ajouter_favoris(val))
+            item.add_action(qicon=get_icon(save_icon),
+                            title=f"{a} '{family_title}'",
+                            action=lambda val=family_title: self.formule_ajouter_favoris(val))
 
-                family_formulas: dict = family_datas.get("formulas", dict())
+            family_formulas: dict = family_datas.get("formulas", dict())
 
-                if len(family_formulas) == 0:
-                    liste_qmenu.append(item)
-                    continue
+            for formula_name, formula in family_formulas.items():
+                item.add_action(qicon=get_icon(family_icon),
+                                title=formula_name,
+                                action=lambda val=formula: self.formule_ajouter(val),
+                                tooltips=self.allplan.traduction_formule_allplan(formula))
 
-                for formula_name, formula in family_formulas.items():
-                    item.add_action(qicon=get_icon(family_icon),
-                                    title=formula_name,
-                                    action=lambda val=formula: self.formule_ajouter(val),
-                                    tooltips=self.allplan.traduction_formule_allplan(formula))
+            liste_qmenu.append(item)
 
-                liste_qmenu.append(item)
-
-            for item in liste_qmenu:
-                menu.addMenu(item)
+        for item in liste_qmenu:
+            menu.addMenu(item)
 
         menu.exec_(find_global_point(self.ui.bt_favoris))
+
+    def formule_ajouter(self, formule: str):
+        self.ui.valeur_attr.setPlainText(formule)
 
     def afficher_widget_favoris(self):
 
@@ -377,25 +378,85 @@ class Formula(QWidget):
     def formule_ajouter_favoris(self, nom_onglet: str):
 
         formula = self.ui.valeur_attr.toPlainText()
+        #
+        # self.widget_formula_fav.favoris_fav_model_add(nom_onglet=nom_onglet,
+        #                                               formula_name="",
+        #                                               formula=formula,
+        #                                               save=True)
 
-        self.widget_formula_fav.favoris_fav_model_add(nom_onglet=nom_onglet,
-                                                      formula_name="",
-                                                      formula=formula,
-                                                      save=True)
+        formula_name = self.save_config_add_item(nom_onglet=nom_onglet,
+                                                 formula=formula)
+
+        if formula_name == "":
+            return
 
         a = self.tr("La formule a bien été ajoutée à vos favoris")
         b = self.tr("Voulez-vous ouvrir le gestionnaire de favoris de formules")
 
-        if msg(titre=self.windowTitle(),
+        # if msg(titre=self.windowTitle(),
+        #        message=f"{a}.\n{b} ?",
+        #        type_bouton=QMessageBox.Ok | QMessageBox.No,
+        #        defaut_bouton=QMessageBox.Ok,
+        #        icone_question=True) == QMessageBox.Ok:
+        #     self.widget_formula_fav.formula_fav_personnaliser(parent_actuel=self.asc,
+        #                                                       nom_onglet=nom_onglet)
+
+        if msg(titre=application_title,
                message=f"{a}.\n{b} ?",
                type_bouton=QMessageBox.Ok | QMessageBox.No,
                defaut_bouton=QMessageBox.Ok,
                icone_question=True) == QMessageBox.Ok:
             self.widget_formula_fav.formula_fav_personnaliser(parent_actuel=self.asc,
-                                                              nom_onglet=nom_onglet)
+                                                              nom_onglet=nom_onglet,
+                                                              formula_name=formula_name)
 
-    def formule_ajouter(self, formule: str):
-        self.ui.valeur_attr.setPlainText(formule)
+    def save_config_add_item(self, nom_onglet: str, formula: str) -> str:
+
+        datas_elements = settings_read(formula_fav_config_file)
+
+        if not isinstance(datas_elements, dict):
+            print("formula_favorite -- save_config_add_item -- not isinstance(datas_elements, dict)")
+            return ""
+
+        formula_titles_list = list()
+        datas_current_formula = None
+
+        for tab_name, datas_tab in datas_elements.items():
+
+            if not isinstance(datas_tab, dict):
+                print("formula_favorite -- save_config_add_item -- not isinstance(datas_tab, dict)")
+                continue
+
+            if "formulas" not in datas_tab:
+                print("formula_favorite -- save_config_add_item -- formulas not in datas_tab")
+                continue
+
+            datas_formula = datas_tab["formulas"]
+
+            if not isinstance(datas_formula, dict):
+                print("formula_favorite -- save_config_add_item -- not isinstance(datas_formula, dict)")
+                continue
+
+            formula_titles_list.extend(list(datas_formula))
+
+            if tab_name == nom_onglet:
+                datas_current_formula = datas_formula
+
+        if not isinstance(datas_current_formula, dict):
+            print("formula_favorite -- save_config_add_item -- not isinstance(datas_current_formula, dict)")
+            return ""
+
+        formula_name = self.tr("Formule")
+        formula_name = f"{formula_name} 01"
+
+        if len(formula_titles_list) != 0:
+            formula_name = find_new_title(base_title=formula_name, titles_list=formula_titles_list)
+
+        datas_current_formula[formula_name] = formula
+
+        settings_save(formula_fav_config_file, datas_elements)
+
+        return formula_name
 
     @staticmethod
     def a___________________attribute_______________():
@@ -448,7 +509,7 @@ class Formula(QWidget):
                 continue
 
             sub_menu.add_action(title=sub_list[0],
-                                action=lambda: self.formula_add_text(sub_list[0]),
+                                action=lambda x=sub_list[0]: self.formula_add_text(x),
                                 tooltips=f"{sub_list[1]}\n{sub_list[2]}")
 
         for sub_menu in categories_dict.values():
@@ -775,23 +836,26 @@ class Finishing(QWidget):
 
         attributes_list = list()
 
-        for attribute_number in self.allplan.formula_favorite_list:
+        for number_str in self.allplan.formula_favorite_list:
 
-            if attribute_number in attributes_list:
+            if number_str in attributes_list:
                 continue
 
-            attribute_name = self.allplan.find_datas_by_number(number=attribute_number, key=code_attr_name)
+            attribute_obj = self.allplan.attributes_dict.get(number_str)
 
-            if attribute_name == "":
+            if not isinstance(attribute_obj, AttributeDatas):
                 continue
 
-            attributes_list.append(attribute_number)
+            if attribute_obj.name == "":
+                continue
 
-            qs_name = QStandardItem(get_icon(attribute_icon), attribute_name)
-            qs_name.setToolTip(attribute_number)
+            attributes_list.append(number_str)
 
-            qm_number = QStandardItem(attribute_number)
-            qm_number.setToolTip(attribute_name)
+            qs_name = QStandardItem(get_icon(attribute_icon), attribute_obj.name)
+            qs_name.setToolTip(number_str)
+
+            qm_number = QStandardItem(number_str)
+            qm_number.setToolTip(attribute_obj.name)
 
             self.finishing_model.appendRow([qs_name, qm_number])
 
@@ -1325,61 +1389,28 @@ class FormulaTool(QWidget):
 
     def tool_load_object_model(self):
 
+        objects_list = self.allplan.get_object_datas()
+
+        if len(objects_list) == 0:
+            print("formula -- tool_load_object_model -- len(objects_list) == 0")
+            return
+
         self.tool_model.clear()
 
         self.tool_model.setHorizontalHeaderLabels([self.tr("Nom objet"), self.tr("Formule")])
 
-        if not isinstance(self.allplan.allplan_paths, AllplanPaths):
-            print("formula -- FormulaTool -- tool_load_object_model -- not isinstance(allplan_paths, AllplanPaths)")
-            return
+        for code, number_int in objects_list:
+            formula = f"@OBJ@={number_int}"
 
-        lines_list = read_file_to_list(file_path=self.allplan.allplan_paths.std_obj000)
+            qs_formula = QStandardItem(formula)
+            qs_formula.setData(number_int, user_data_type)
 
-        objects_list = list()
+            self.tool_model.appendRow([QStandardItem(code), qs_formula])
 
-        try:
+            self.allplan.model_autocompletion.appendRow([QStandardItem(f"@OBJ@={code}"),
+                                                         QStandardItem(formula)])
 
-            for line_index, line_text in enumerate(lines_list):
-
-                if line_index < 2:
-                    continue
-
-                element = line_text[12:]
-                element = element.strip().split(" ", 1)
-
-                if len(element) < 2:
-                    continue
-
-                try:
-                    number_int = int(element[0])
-                except Exception:
-                    continue
-
-                formula = f"@OBJ@={number_int}"
-                code = element[1]
-
-                if formula == "" or code == "":
-                    print("formula -- FormulaTool -- tool_load_object_model -- formula == '' or code == ''")
-                    continue
-
-                objects_list.append([code, number_int, formula])
-
-            objects_list.sort(key=lambda x: x[0])
-
-            for code, number_int, formula in objects_list:
-                qs_formula = QStandardItem(formula)
-                qs_formula.setData(number_int, user_data_type)
-
-                self.tool_model.appendRow([QStandardItem(code), qs_formula])
-
-                self.allplan.model_autocompletion.appendRow([QStandardItem(f"@OBJ@={code}"),
-                                                             QStandardItem(formula)])
-
-            self.tool_header_manage()
-
-        except Exception as error:
-            print(f"formula -- FormulaTool -- tool_load_object_model -- erreur : {error}")
-            return
+        self.tool_header_manage()
 
     def tool_load_trade_model(self):
 
@@ -1387,15 +1418,18 @@ class FormulaTool(QWidget):
 
         self.tool_model.setHorizontalHeaderLabels([self.tr("Code"), self.tr("Formule")])
 
-        trade_model = self.allplan.find_datas_by_number("209", "enumeration")
+        attribute_obj = self.allplan.attributes_dict.get("209")
 
-        if not isinstance(trade_model, QStandardItemModel):
+        if not isinstance(attribute_obj, AttributeDatas):
             return
 
-        for index_item in range(trade_model.rowCount()):
+        if not isinstance(attribute_obj.enumeration, QStandardItemModel):
+            return
 
-            qs_index = trade_model.index(index_item, 0)
-            qs_trade = trade_model.index(index_item, 1)
+        for index_item in range(attribute_obj.enumeration.rowCount()):
+
+            qs_index = attribute_obj.enumeration.index(index_item, 0)
+            qs_trade = attribute_obj.enumeration.index(index_item, 1)
 
             number = qs_index.data()
             code = qs_trade.data()
@@ -1745,6 +1779,15 @@ class FormulaTool(QWidget):
 
     def tool_search_manage(self, current_txt: str):
 
+        if current_txt == "":
+            self.ui.search.setStyleSheet("QLineEdit{border: 1px solid #8f8f91; "
+                                         "border-right-width: 0px; border-top-left-radius: 5px; "
+                                         "border-bottom-left-radius: 5px; padding-left: 5px; }")
+        else:
+            self.ui.search.setStyleSheet("QLineEdit{border: 2px solid orange; "
+                                         "border-right-width: 0px; border-top-left-radius: 5px; "
+                                         "border-bottom-left-radius: 5px; padding-left: 4px; }")
+
         old_selection = self.tool_find_current_name()
 
         if self.current_mod != "function":
@@ -1758,7 +1801,14 @@ class FormulaTool(QWidget):
         self.tool_filter.setFilterRegExp(current_txt)
 
         if self.tool_filter.rowCount() == 0:
-            return
+
+            if self.tool_filter.filterKeyColumn() == 0:
+                self.tool_filter.setFilterKeyColumn(1)
+            else:
+                self.tool_filter.setFilterKeyColumn(0)
+
+            if self.tool_filter.rowCount() == 0:
+                return
 
         qm_current = self.ui.table.currentIndex()
 

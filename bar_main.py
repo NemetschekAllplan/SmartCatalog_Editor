@@ -5,24 +5,732 @@ import shutil
 
 from catalog import WidgetCatalogNew
 from catalog_manage import *
-from tools import get_real_path_of_apn_file, settings_save, MyContextMenu, help_modify_tooltips
-from tools import menu_ht_ligne, taille_police_menu, find_global_point
-from tools import open_folder, verification_catalogue_correct, verification_nom_catalogue, menu_ht_widget
-from browser import browser_file
+from tools import get_real_path_of_apn_file, settings_save, MyContextMenu, help_modify_tooltips, move_widget_ss_bouton
+from tools import open_folder, verification_catalogue_correct, verification_nom_catalogue, browser_file
+from ui_catalog_recent import Ui_CatalogRecent
+
+
+class CatalogRecentCategory:
+
+    def __init__(self, icons: QIcon, categorie_data: str, categorie_title: str):
+        super().__init__()
+
+        self.categorie_data = categorie_data
+
+        # --------
+
+        font_bold = QStandardItem().font()
+        font_bold.setBold(True)
+
+        # --------
+
+        self.qs_type = QStandardItem()
+        self.qs_type.setIcon(icons)
+        self.qs_type.setData(categorie_data, user_data_type)
+        self.qs_type.setFlags(Qt.ItemIsEnabled)
+        self.qs_type.setData(QColor("#BAD0E7"), Qt.BackgroundRole)
+
+        # --------
+
+        qs_categorie = QStandardItem(categorie_title)
+        qs_categorie.setFont(font_bold)
+        qs_categorie.setFlags(Qt.ItemIsEnabled)
+        qs_categorie.setData(Qt.AlignCenter, Qt.TextAlignmentRole)
+        qs_categorie.setData(QColor("#BAD0E7"), Qt.BackgroundRole)
+        qs_categorie.setData(QColor("#4D4D4D"), Qt.ForegroundRole)
+
+        # --------
+
+        qs_del = QStandardItem()
+        qs_del.setFlags(Qt.ItemIsEnabled)
+        qs_del.setData(QColor("#BAD0E7"), Qt.BackgroundRole)
+
+        # --------
+
+        self.qs_list = [self.qs_type, qs_categorie, qs_del]
+
+        # --------
+
+        self.titles = list()
+        self.child = dict()
+
+        # --------
+
+    def add_child(self, title: str, qs_list):
+        self.titles.append(title)
+        self.child[title] = qs_list
+
+    def sort_and_add(self) -> list:
+        self.titles.sort()
+
+        for title in self.titles:
+            self.qs_type.appendRow(self.child[title])
+
+        return self.qs_list
+
+
+class CatalogRecentItem:
+
+    def __init__(self, title: str, qs_list: list):
+        super().__init__()
+
+        self.title = title
+        self.qs_list = qs_list
+
+
+class CatalogRecent(QWidget):
+    recent_open_cat = pyqtSignal(str)
+
+    def __init__(self, allplan: AllplanDatas):
+        super().__init__()
+
+        self.setWindowFlags(Qt.Popup)
+
+        # -----------------------------------------------
+        # Parent
+        # -----------------------------------------------
+
+        self.allplan = allplan
+
+        # -----------------------------------------------
+        # Interface
+        # -----------------------------------------------
+
+        self.ui = Ui_CatalogRecent()
+        self.ui.setupUi(self)
+
+        get_look_treeview(self.ui.hierarchy_recent)
+
+        # -----------------------------------------------
+        # Model & filter
+        # -----------------------------------------------
+        self.recent_model = QStandardItemModel()
+
+        self.recent_filter = QSortFilterProxyModel()
+        self.recent_filter.setRecursiveFilteringEnabled(False)
+        self.recent_filter.setFilterRole(user_data_type)
+        self.recent_filter.setSourceModel(self.recent_model)
+
+        self.ui.hierarchy_recent.setModel(self.recent_filter)
+
+        # -----------------------------------------------
+        # Variables
+        # -----------------------------------------------
+
+        self.catalog_path = ""
+        self.other_title = self.tr("Autre").upper()
+        self.demo_title = self.tr("Catalogue de démo").upper()
+        self.change = False
+        self.change_settings = False
+
+        self.demo_year_set = set()
+
+        # -----------------------------------------------
+        # Signals
+        # -----------------------------------------------
+
+        self.ui.etc_bt.clicked.connect(self.recent_button_clicked)
+        self.ui.std_bt.clicked.connect(self.recent_button_clicked)
+        self.ui.demo_bt.clicked.connect(self.recent_button_clicked)
+        self.ui.other_bt.clicked.connect(self.recent_button_clicked)
+
+        self.ui.a2022_bt.clicked.connect(self.recent_button_clicked)
+        self.ui.a2023_bt.clicked.connect(self.recent_button_clicked)
+        self.ui.a2024_bt.clicked.connect(self.recent_button_clicked)
+        self.ui.a2025_bt.clicked.connect(self.recent_button_clicked)
+        self.ui.a2026_bt.clicked.connect(self.recent_button_clicked)
+
+        self.ui.hierarchy_recent.clicked.connect(self.recent_item_clicked)
+
+        # -----------------------------------------------
+
+        self.recent_load_settings()
+
+    @staticmethod
+    def a___________________initialized______():
+        pass
+
+    def recent_load_settings(self):
+
+        recent_config = settings_read(recent_config_file)
+
+        if not isinstance(recent_config, dict):
+            recent_config = dict(recent_config_dict)
+
+        # -------
+
+        etc = recent_config.get("etc", recent_config_dict.get("etc", True))
+
+        if isinstance(etc, bool):
+            self.ui.etc_bt.setChecked(etc)
+
+        # -------
+
+        std = recent_config.get("std", recent_config_dict.get("std", True))
+
+        if isinstance(std, bool):
+            self.ui.std_bt.setChecked(std)
+
+        # -------
+
+        demo = recent_config.get("demo", recent_config_dict.get("demo", True))
+
+        if isinstance(demo, bool):
+            self.ui.demo_bt.setChecked(demo)
+
+        # -------
+
+        other = recent_config.get("other", recent_config_dict.get("other", True))
+
+        if isinstance(other, bool):
+            self.ui.other_bt.setChecked(other)
+
+        # -------
+
+        a2022 = recent_config.get("2022", recent_config_dict.get("2022", True))
+
+        if isinstance(a2022, bool):
+            self.ui.a2022_bt.setChecked(a2022)
+
+        # -------
+
+        a2023 = recent_config.get("2023", recent_config_dict.get("2023", True))
+
+        if isinstance(a2023, bool):
+            self.ui.a2023_bt.setChecked(a2023)
+
+        # -------
+
+        a2024 = recent_config.get("2024", recent_config_dict.get("2024", True))
+
+        if isinstance(a2024, bool):
+            self.ui.a2024_bt.setChecked(a2024)
+
+        # -------
+
+        a2025 = recent_config.get("2025", recent_config_dict.get("2025", True))
+
+        if isinstance(a2025, bool):
+            self.ui.a2025_bt.setChecked(a2025)
+
+        # -------
+
+        a2026 = recent_config.get("2026", recent_config_dict.get("2026", True))
+
+        if isinstance(a2026, bool):
+            self.ui.a2026_bt.setChecked(a2026)
+
+    def recent_show(self, catalog_path: str) -> bool:
+
+        self.change = False
+        self.change_settings = False
+
+        self.recent_model.clear()
+
+        self.catalog_path = catalog_path
+
+        catalog_list = settings_list(cat_list_file)
+
+        if not isinstance(catalog_list, list):
+            print("catalog_recent -- catalog_recent_show -- not isinstance(catalog_list, list)")
+            return False
+
+        # -------------
+
+        etc_path_dict = dict()
+        std_path_dict = dict()
+
+        category_title_dict = dict()
+        category_title_list = list()
+
+        category_set = set()
+        year_set = set()
+
+        demo_set = set()
+
+        if self.allplan.langue == "FR":
+            catalog_demo = "CMI"
+
+        elif self.allplan.langue == "DE":
+            catalog_demo = "Allplan"
+
+        else:
+            catalog_demo = f"Allplan_{self.allplan.langue.lower()}"
+
+        # -------------
+
+        for year, version_allplan in self.allplan.version_datas.items():
+
+            if not isinstance(version_allplan, AllplanPaths):
+                print("catalog_recent -- catalog_recent_show -- not isinstance(version_allplan, AllplanPaths)")
+                continue
+
+            etc_cat_path = version_allplan.etc_cat_path
+
+            if os.path.exists(etc_cat_path):
+
+                etc_path_dict[etc_cat_path.lower()] = year
+
+                # -------
+
+                demo_cat_path = f"{etc_cat_path}{catalog_demo}.xml"
+
+                category_title = self.demo_title
+
+                # -------
+
+                if os.path.exists(demo_cat_path):
+
+                    self.demo_year_set.add(year)
+
+                    demo_set.add(demo_cat_path.lower())
+
+                    if year not in year_set:
+                        year_set.add(year)
+
+                    if category_title not in category_title_dict:
+
+                        category_obj = CatalogRecentCategory(icons=get_icon(":/Images/demo.png"),
+                                                             categorie_data=f"{category_title} 202X",
+                                                             categorie_title=category_title)
+
+                        category_title_dict[category_title] = category_obj
+                        category_set.add(category_title)
+
+                    else:
+
+                        category_obj = category_title_dict[category_title]
+
+                    # -------------
+
+                    self.recent_add_path(title=f"{catalog_demo} {year}", catalog_path=demo_cat_path,
+                                         categorie_data=f"{category_title} {year}", category_obj=category_obj,
+                                         locked=True)
+
+            # -------------
+
+            std_cat_path = version_allplan.std_cat_path
+
+            if os.path.exists(std_cat_path):
+                std_path_dict[std_cat_path.lower()] = year
+
+        # -------------
+
+        for catalog_path in catalog_list:
+
+            if catalog_path.lower() in demo_set:
+                continue
+
+            if not isinstance(catalog_path, str):
+                print("catalog_recent -- catalog_recent_show -- not isinstance(catalog_path, str)")
+                self.change = True
+                continue
+
+            if not os.path.exists(catalog_path):
+                print("catalog_recent -- catalog_recent_show -- not os.path.exists(catalog_path)")
+                self.change = True
+                continue
+
+            folder = find_folder_path(file_path=catalog_path).lower()
+            title = find_filename(file_path=catalog_path)
+
+            if folder in etc_path_dict:
+                category = "ETC"
+                year = etc_path_dict[folder]
+                category_title = categorie_data = f"{category} {year}"
+                icons = get_icon(":/Images/etc.png")
+
+                if year not in year_set:
+                    year_set.add(year)
+
+                if category_title not in category_title_list:
+                    category_title_list.append(category_title)
+
+            elif folder in std_path_dict:
+                category = "STD"
+                year = std_path_dict[folder]
+                category_title = categorie_data = f"{category} {year}"
+                icons = get_icon(":/Images/std.png")
+
+                if year not in year_set:
+                    year_set.add(year)
+
+                if category_title not in category_title_list:
+                    category_title_list.append(category_title)
+
+            else:
+                year = "20XX"
+                category = category_title = self.other_title
+                categorie_data = f"{category} {year}"
+                icons = get_icon(":/Images/usr.png")
+
+            # -------
+
+            if category not in category_set:
+                category_set.add(category)
+
+            # -------
+
+            if category_title not in category_title_dict:
+
+                category_obj = CatalogRecentCategory(icons=icons,
+                                                     categorie_data=categorie_data,
+                                                     categorie_title=category_title)
+
+                category_title_dict[category_title] = category_obj
+
+            else:
+
+                category_obj = category_title_dict[category_title]
+
+            # -------
+
+            locked = catalog_path == self.catalog_path
+
+            self.recent_add_path(title=title, catalog_path=catalog_path, categorie_data=category_obj.categorie_data,
+                                 category_obj=category_obj, locked=locked)
+
+        # -------
+
+        if self.demo_title in category_title_dict:
+            category_obj = category_title_dict[self.demo_title]
+            self.recent_model.appendRow(category_obj.sort_and_add())
+
+        if self.other_title in category_title_dict:
+            category_obj = category_title_dict[self.other_title]
+            self.recent_model.appendRow(category_obj.sort_and_add())
+
+        category_title_list.sort(reverse=True)
+
+        for category_title in category_title_list:
+            category_obj = category_title_dict[category_title]
+            self.recent_model.appendRow(category_obj.sort_and_add())
+
+        # -------
+
+        self.recent_button_clicked()
+
+        self.ui.hierarchy_recent.expandAll()
+
+        self.recent_header_manage()
+
+        # -------
+
+        if "ETC" not in category_set:
+            self.ui.etc_bt.setChecked(False)
+            self.ui.etc_bt.setVisible(False)
+
+        if "STD" not in category_set:
+            self.ui.std_bt.setChecked(False)
+            self.ui.std_bt.setVisible(False)
+
+        if self.demo_title not in category_set:
+            self.ui.demo_bt.setChecked(False)
+            self.ui.demo_bt.setVisible(False)
+
+        if self.other_title not in category_set:
+            self.ui.other_bt.setChecked(False)
+            self.ui.other_bt.setVisible(False)
+
+        # -------
+
+        if "2022" not in year_set:
+            self.ui.a2022_bt.setChecked(False)
+            self.ui.a2022_bt.setVisible(False)
+
+        if "2023" not in year_set:
+            self.ui.a2023_bt.setChecked(False)
+            self.ui.a2023_bt.setVisible(False)
+
+        if "2024" not in year_set:
+            self.ui.a2024_bt.setChecked(False)
+            self.ui.a2024_bt.setVisible(False)
+
+        if "2025" not in year_set:
+            self.ui.a2025_bt.setChecked(False)
+            self.ui.a2025_bt.setVisible(False)
+
+        if "2026" not in year_set:
+            self.ui.a2026_bt.setChecked(False)
+            self.ui.a2026_bt.setVisible(False)
+
+        self.show()
+
+    def recent_add_path(self, title: str, catalog_path: str, categorie_data: str, category_obj: CatalogRecentCategory,
+                        locked=False):
+
+        qs_open = QStandardItem(get_icon(catalog_icon), "")
+        qs_open.setData(categorie_data, user_data_type)
+        qs_open.setToolTip(self.tr("Afficher ce catalogue dans votre explorateur de fichier"))
+
+        # --------
+
+        qs_title = QStandardItem(title)
+        qs_title.setToolTip(catalog_path)
+
+        # --------
+
+        qs_del = QStandardItem(get_icon(delete_icon), "")
+        qs_del.setToolTip(self.tr("Supprimer ce catalogue de la liste"))
+
+        if locked:
+            qs_del.setEnabled(False)
+
+            font_italic = qs_title.font()
+
+            if self.demo_title in categorie_data:
+                qs_del.setToolTip(self.tr("Suppression impossible : Catalogue de démo"))
+                font_italic.setItalic(True)
+                qs_title.setFont(font_italic)
+
+            else:
+                font_italic.setBold(True)
+                qs_title.setFont(font_italic)
+                qs_del.setToolTip(self.tr("Suppression impossible : Catalogue actif"))
+
+        else:
+
+            qs_del.setToolTip(self.tr("Supprimer ce catalogue de la liste"))
+
+        # --------
+
+        category_obj.add_child(title=title, qs_list=[qs_open, qs_title, qs_del])
+
+    def recent_header_manage(self):
+
+        self.ui.hierarchy_recent.setHeaderHidden(False)
+
+        self.ui.hierarchy_recent.setColumnWidth(0, 70)
+        self.ui.hierarchy_recent.setColumnWidth(2, 20)
+
+        self.ui.hierarchy_recent.header().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.ui.hierarchy_recent.setHeaderHidden(True)
+
+    @staticmethod
+    def a___________________hierarchy_clicked______():
+        pass
+
+    def recent_item_clicked(self):
+
+        qm_selected_list = self.ui.hierarchy_recent.selectionModel().selectedIndexes()
+
+        if len(qm_selected_list) == 0:
+            return
+
+        qm = qm_selected_list[0]
+
+        if not qm_check(qm):
+            print("catalog_recent -- recent_item_clicked -- not qm_check(qm)")
+            return
+
+        column = qm.column()
+
+        qm_parent = qm.parent()
+
+        if not qm_check(qm_parent):
+            print("catalog_recent -- recent_item_clicked -- not qm_check(qm_parent)")
+            return
+
+        if column != 1:
+
+            qm = self.recent_filter.index(qm.row(), 1, qm_parent)
+
+            if not qm_check(qm):
+                print("catalog_recent -- recent_item_clicked -- not qm_check(qm) 2")
+                return
+
+        file_path = qm.data(Qt.ToolTipRole)
+
+        if column == 0:
+            open_folder(find_folder_path(file_path=file_path))
+            return
+
+        if column == 1:
+            self.recent_open_cat.emit(file_path)
+            return
+
+        if column == 2:
+            self.recent_filter.removeRow(qm.row(), qm_parent)
+            self.change = True
+
+    @staticmethod
+    def a___________________button_clicked______():
+        pass
+
+    def recent_button_clicked(self):
+
+        self.change_settings = True
+
+        folder_list = list()
+        other = False
+        demo = False
+
+        if self.ui.etc_bt.isChecked():
+            folder_list.append("ETC")
+
+        if self.ui.std_bt.isChecked():
+            folder_list.append("STD")
+
+        if self.ui.demo_bt.isChecked():
+            folder_list.append(self.demo_title)
+            demo = True
+
+        if self.ui.other_bt.isChecked():
+            folder_list.append(self.other_title)
+            other = True
+
+        if len(folder_list) == 0:
+            self.recent_filter.setFilterRegExp("")
+            self.ui.hierarchy_recent.expandAll()
+            return
+
+        pattern = f"^({'|'.join(folder_list)})"
+
+        # --------------
+
+        year_list = list()
+        demo_count = 0
+
+        if self.ui.a2022_bt.isChecked():
+            year_list.append("2022")
+            demo_count += demo and "2022" in self.demo_year_set
+
+        if self.ui.a2023_bt.isChecked():
+            year_list.append("2023")
+            demo_count += demo and "2023" in self.demo_year_set
+
+        if self.ui.a2024_bt.isChecked():
+            year_list.append("2024")
+            demo_count += demo and "2024" in self.demo_year_set
+
+        if self.ui.a2025_bt.isChecked():
+            year_list.append("2025")
+            demo_count += demo and "2025" in self.demo_year_set
+
+        if self.ui.a2026_bt.isChecked():
+            year_list.append("2026")
+            demo_count += demo and "2026" in self.demo_year_set
+
+        if demo_count != 0:
+            year_list.append("202X")
+
+        if len(year_list) != 0:
+
+            if other:
+                year_list.append("20XX")
+
+            pattern += f".*({'|'.join(year_list)})$"
+            self.recent_filter.setFilterRegExp(pattern)
+            self.ui.hierarchy_recent.expandAll()
+            return
+
+        self.recent_filter.setFilterRegExp(pattern)
+        self.ui.hierarchy_recent.expandAll()
+
+    @staticmethod
+    def a___________________save______():
+        pass
+
+    def recent_save_list(self):
+
+        row_count = self.recent_model.rowCount()
+
+        catalog_list = list()
+
+        for index_row in range(row_count):
+
+            qs_parent = self.recent_model.item(index_row, 0)
+
+            if not isinstance(qs_parent, QStandardItem):
+                print("catalog_recent -- recent_save_list -- not isinstance(qs, QStandardItem)")
+                continue
+
+            children_count = qs_parent.rowCount()
+
+            for index_child_row in range(children_count):
+
+                qs_title = qs_parent.child(index_child_row, 1)
+
+                if not isinstance(qs_title, QStandardItem):
+                    print("catalog_recent -- recent_save_list -- not isinstance(qs, QStandardItem)")
+                    continue
+
+                catalog_path = qs_title.toolTip()
+
+                if not isinstance(catalog_path, str):
+                    print("catalog_recent -- recent_save_list -- not isinstance(catalog_path, str)")
+                    continue
+
+                if not os.path.exists(catalog_path):
+                    print("catalog_recent -- recent_save_list -- not os.path.exists(catalog_path)")
+                    continue
+
+                if catalog_path in catalog_list:
+                    print("catalog_recent -- recent_save_list -- catalog_path in catalog_list")
+                    continue
+
+                catalog_list.append(catalog_path)
+
+        print(catalog_list)
+
+        settings_save(cat_list_file, catalog_list)
+
+    def recent_save_setting(self):
+
+        config_datas = {"etc": self.ui.etc_bt.isChecked(),
+                        "std": self.ui.std_bt.isChecked(),
+                        "demo": self.ui.demo_bt.isChecked(),
+                        "other": self.ui.other_bt.isChecked(),
+                        "2022": self.ui.a2022_bt.isChecked(),
+                        "2023": self.ui.a2023_bt.isChecked(),
+                        "2024": self.ui.a2024_bt.isChecked(),
+                        "2025": self.ui.a2025_bt.isChecked(),
+                        "2026": self.ui.a2026_bt.isChecked()}
+
+        settings_save(file_name=recent_config_file, config_datas=config_datas)
+
+    @staticmethod
+    def a___________________event______():
+        pass
+
+    def closeEvent(self, event: QCloseEvent):
+
+        if self.change:
+            self.recent_save_list()
+
+        if self.change_settings:
+            self.recent_save_setting()
+
+        super().closeEvent(event)
+
+    @staticmethod
+    def a___________________end______():
+        pass
 
 
 class MainBar(QObject):
 
-    def __init__(self, asc):
+    def __init__(self, asc, new_catalog_widget: WidgetCatalogNew):
         super().__init__()
 
         self.asc = asc
+        self.new_catalog_widget = new_catalog_widget
 
         self.menu_cat_recent = MyContextMenu()
 
         self.ui: Ui_MainWindow = self.asc.ui
         self.catalog: CatalogDatas = self.asc.catalog
         self.allplan: AllplanDatas = self.asc.allplan
+
+        # ---------------------------------------
+
+        self.recent_widget = CatalogRecent(allplan=self.allplan)
+
+        self.asc.langue_change.connect(lambda main=self.recent_widget: self.ui.retranslateUi(main))
+
+        self.recent_widget.recent_open_cat.connect(self.catalog_open_file)
+
+        # ---------------------------------------
 
         self.dossier_defaut_ouvrir = ""
 
@@ -65,12 +773,6 @@ class MainBar(QObject):
         self.ui.save_as_bt.clicked.connect(self.catalog_save_as)
         help_modify_tooltips(widget=self.ui.save_as_bt, short_link=help_cat_save_as, help_text=self.asc.help_tooltip)
 
-        # ---------------------------------------
-        # CHARGEMENT Nouveau catalogue
-        # ---------------------------------------
-
-        self.widget_nouveau = WidgetCatalogNew(self.asc)
-
     @staticmethod
     def a___________________nouveau______():
         pass
@@ -79,19 +781,13 @@ class MainBar(QObject):
 
         self.asc.formula_widget_close()
 
-        if not self.catalog.catalog_save_ask():
-            return
-
-        self.widget_nouveau.personnalisation(new=True)
+        self.new_catalog_widget.personnalisation(new=True)
 
     def catalogue_importer(self):
 
         self.asc.formula_widget_close()
 
-        if not self.catalog.catalog_save_ask():
-            return
-
-        self.widget_nouveau.personnalisation(convert_bdd=True)
+        self.new_catalog_widget.personnalisation(convert_bdd=True)
 
     @staticmethod
     def a___________________ouvrir______():
@@ -172,140 +868,9 @@ class MainBar(QObject):
 
     def menu_cat_recent_show(self):
 
-        self.menu_cat_recent.clear()
-        dict_cat = dict()
+        move_widget_ss_bouton(self.ui.open_list_bt, self.recent_widget)
 
-        dict_cat[self.tr("Catalogue de démo")] = list()
-
-        for version_allplan in self.allplan.versions_list:
-            dict_cat[f"ETC -- Allplan {version_allplan}"] = list()
-            dict_cat[f"PRJ -- Allplan {version_allplan}"] = list()
-
-        chemin_cat_2023 = f"{asc_user_path}Catalogue - exemples\\2023\\CMI.xml"
-
-        cat_2023_existe = os.path.exists(chemin_cat_2023)
-
-        if cat_2023_existe:
-            liste: list = dict_cat[self.tr("Catalogue de démo")]
-            liste.append(chemin_cat_2023)
-
-        dict_cat["ETC"] = list()
-        dict_cat["PRJ"] = list()
-        dict_cat[self.tr("Autres")] = list()
-
-        liste_fichiers_ouverts = settings_list(cat_list_file)
-        liste_fichiers_ouverts.sort()
-
-        liste_fichiers_ouverts_fin = list(liste_fichiers_ouverts)
-
-        for chemin_fichier in reversed(liste_fichiers_ouverts):
-
-            dossier_catalogue = os.path.dirname(chemin_fichier)
-
-            if not os.path.exists(chemin_fichier) or len(chemin_fichier) < 2:
-                liste_fichiers_ouverts_fin.remove(chemin_fichier)
-                continue
-
-            if "\\etc\\" in chemin_fichier.lower():
-
-                recherche = False
-                for version_allplan in self.allplan.versions_list:
-
-                    if version_allplan in dossier_catalogue:
-                        liste: list = dict_cat[f"ETC -- Allplan {version_allplan}"]
-                        liste.append(chemin_fichier)
-                        recherche = True
-                        break
-
-                if not recherche:
-                    liste: list = dict_cat["ETC"]
-                    liste.append(chemin_fichier)
-
-            elif "\\prj\\" in chemin_fichier.lower():
-
-                recherche = False
-                for version_allplan in self.allplan.versions_list:
-
-                    if version_allplan in dossier_catalogue:
-                        liste: list = dict_cat[f"PRJ -- Allplan {version_allplan}"]
-                        liste.append(chemin_fichier)
-                        recherche = True
-                        break
-
-                if not recherche:
-                    liste: list = dict_cat["PRJ"]
-                    liste.append(chemin_fichier)
-
-            else:
-
-                liste: list = dict_cat[self.tr("Autres")]
-                liste.append(chemin_fichier)
-
-        settings_save(cat_list_file, liste_fichiers_ouverts_fin)
-
-        menu_ok = False
-
-        for key_dict, liste_datas in dict_cat.items():
-
-            key_dict: str
-            liste_datas: list
-
-            if len(liste_datas) == 0:
-                continue
-
-            liste_datas.sort()
-
-            menu_ok = True
-
-            self.menu_cat_recent.add_title(title=f"{key_dict}")
-
-            for index_menu, chemin_catalogue in enumerate(liste_datas):
-
-                if chemin_catalogue == chemin_cat_2023 and cat_2023_existe and key_dict != self.tr("Catalogue de démo"):
-                    continue
-
-                self.menu_cat_recent.addAction(self.menu_deroulant_chemin(chemin_catalogue, index_menu,
-                                                                          key_dict == self.tr("Catalogue de démo")))
-
-        if not menu_ok:
-            return
-
-        self.menu_cat_recent.exec_(find_global_point(self.ui.open_list_bt))
-
-    @staticmethod
-    def menu_titre_projet(chemin) -> str:
-
-        chemin_cat_2023 = f"{asc_user_path}Catalogue - exemples\\2023\\CMI.xml"
-
-        if chemin == chemin_cat_2023:
-            return "CMI - 2023"
-
-        nom_catalogue = os.path.basename(chemin)
-
-        if ".prj" not in chemin:
-            return nom_catalogue
-
-        try:
-            start = chemin.rfind("\\", 0, chemin.find(".prj"))
-            end = chemin.find(".prj")
-
-            if start == -1:
-                return nom_catalogue
-            elif end == 3:
-                return nom_catalogue
-            else:
-                nom_fichier = chemin[start + 1:end]
-                return f"{nom_fichier} --> {nom_catalogue}"
-
-        except ValueError:
-            return nom_catalogue
-
-    def menu_bt_supprimer(self, chemin: str):
-
-        settings_list(cat_list_file, ele_del=chemin)
-
-        self.menu_cat_recent.close()
-        self.menu_cat_recent_show()
+        self.recent_widget.recent_show(catalog_path=self.catalog.catalog_path)
 
     def catalog_open_file(self, chemin_fichier: str):
         print(f"onglet_hierarchie -- menu_bt_charger -- lancer chargement catalogue : {chemin_fichier}")
@@ -320,11 +885,6 @@ class MainBar(QObject):
         self.catalog.catalog_load_start(catalog_path=chemin_fichier)
 
     @staticmethod
-    def menu_bt_ouvrir_dossier(chemin: str):
-        if os.path.exists(chemin):
-            open_folder(find_folder_path(chemin))
-
-    @staticmethod
     def a___________________parametres______():
         pass
 
@@ -332,10 +892,7 @@ class MainBar(QObject):
 
         self.asc.formula_widget_close()
 
-        if not self.catalog.catalog_save_ask():
-            return
-
-        self.widget_nouveau.personnalisation(modify=True)
+        self.new_catalog_widget.personnalisation(modify=True)
 
     @staticmethod
     def a___________________enregistrer______():
@@ -461,103 +1018,5 @@ class MainBar(QObject):
             self.asc.open_list_manage(catalog_opened_list=catalog_opened_list)
 
     @staticmethod
-    def a___________________outils______():
+    def a___________________end______():
         pass
-
-    def menu_deroulant_chemin(self, chemin: str, index_menu: int, demo=False) -> QWidgetAction:
-
-        action_widget = QWidgetAction(self.asc)
-        action_widget.setEnabled(True)
-        action_widget.setIconVisibleInMenu(False)
-
-        widget = QWidget()
-
-        font = widget.font()
-        font.setPointSize(taille_police_menu)
-        widget.setFont(font)
-
-        widget.setMinimumWidth(150)
-        widget.setFixedHeight(menu_ht_ligne)
-
-        projet_actif = chemin == self.catalog.catalog_path
-
-        if projet_actif:
-            widget.setStyleSheet("QWidget{background-color: #8FADCC}")
-
-        else:
-
-            if index_menu % 2:
-                widget.setStyleSheet("QWidget{background-color: #E7E7E7}"
-                                     "QPushButton:hover{background-color: #BAD0E7; "
-                                     "border-style: inset; border-width: 0px;}"
-                                     "QPushButton:pressed{background-color: #8FADCC; "
-                                     "border-style: inset; border-width: 0px;}")
-            else:
-                widget.setStyleSheet("QWidget{background-color: #FFFFFF}"
-                                     "QPushButton:hover{background-color: #BAD0E7; "
-                                     "border-style: inset; border-width: 0px;}"
-                                     "QPushButton:pressed{background-color: #8FADCC; "
-                                     "border-style: inset; border-width: 0px;}")
-
-        horizontallayout = QHBoxLayout(widget)
-        horizontallayout.setContentsMargins(6, 0, 6, 0)
-
-        # ---------
-
-        pushbutton_ouvrir = QPushButton(get_icon(catalog_icon), "")
-        pushbutton_ouvrir.setFlat(True)
-        pushbutton_ouvrir.setIconSize(QSize(18, 18))
-        pushbutton_ouvrir.setFixedSize(QSize(24, 24))
-
-        horizontallayout.addWidget(pushbutton_ouvrir)
-
-        pushbutton_ouvrir.clicked.connect(lambda: self.menu_bt_ouvrir_dossier(chemin))
-        pushbutton_ouvrir.setToolTip(self.tr("Afficher ce catalogue dans votre explorateur de fichier"))
-
-        # ---------
-
-        titre = self.menu_titre_projet(chemin)
-
-        pushbutton_titre = QPushButton(titre)
-        pushbutton_titre.setFlat(True)
-        pushbutton_titre.setFixedHeight(menu_ht_widget)
-        pushbutton_titre.setMinimumWidth(150)
-        pushbutton_titre.setStyleSheet("padding-left:4px; text-align:left")
-        pushbutton_titre.setFont(font)
-
-        horizontallayout.addWidget(pushbutton_titre)
-
-        pushbutton_titre.clicked.connect(lambda: self.catalog_open_file(chemin))
-
-        titre_trad = self.tr('Charger catalogue')
-
-        pushbutton_titre.setToolTip(f"{titre_trad} : {chemin}")
-
-        # ---------
-
-        pushbutton_corbeille = QPushButton(get_icon(delete_icon), "")
-        pushbutton_corbeille.setFlat(True)
-        pushbutton_corbeille.setIconSize(QSize(18, 18))
-        pushbutton_corbeille.setFixedSize(QSize(24, 24))
-
-        pushbutton_corbeille.clicked.connect(lambda: self.menu_bt_supprimer(chemin))
-
-        if projet_actif or demo:
-            pushbutton_corbeille.setEnabled(False)
-            pushbutton_corbeille.setToolTip(self.tr("Suppression impossible : Catalogue actif"))
-
-        elif demo:
-            pushbutton_corbeille.setEnabled(False)
-            pushbutton_corbeille.setToolTip(self.tr("Suppression impossible : Catalogue de démo"))
-
-        else:
-            pushbutton_corbeille.setToolTip(self.tr("Supprimer ce catalogue de la liste"))
-
-        # ---------
-        horizontallayout.addWidget(pushbutton_corbeille)
-
-        widget.sizeHint()
-
-        action_widget.setDefaultWidget(widget)
-
-        return action_widget

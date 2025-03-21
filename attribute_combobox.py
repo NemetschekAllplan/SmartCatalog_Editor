@@ -3,20 +3,18 @@
 
 from PyQt5.Qt import *
 
-from main_datas import lock_icon, get_icon, code_attr_tooltips, code_attr_option, code_attr_combo_str_edit, \
-    code_attr_name, code_attr_number
+from allplan_manage import AttributeDatas
+from history_manage import AttributeModifyData
+from main_datas import lock_icon, get_icon, code_attr_combo_str_edit, user_guid
 from tools import ValidatorDouble, ValidatorInt, ValidatorModel, set_appearance_number, get_look_combobox
 from tools import set_appearence_type
 from ui_attribute_combobox import Ui_AttributeCombobox
 
 
 class AttributeCombobox(QWidget):
-    attribute_changed_signal = pyqtSignal(QStandardItem, str, str, str, str, str)
+    attribute_changed_signal = pyqtSignal(str, list, str, dict)
 
-    def __init__(self, model_combo: QStandardItemModel,
-                 attribute_datas: dict,
-                 qs_value: QStandardItem,
-                 qs_index: QStandardItem):
+    def __init__(self, attribute_datas: AttributeDatas, qs_value: QStandardItem, qs_index: QStandardItem):
 
         super().__init__()
 
@@ -28,14 +26,14 @@ class AttributeCombobox(QWidget):
 
         # ----------------------------------
 
-        if isinstance(attribute_datas, dict):
+        if isinstance(attribute_datas, AttributeDatas):
 
-            self.ui.num_attrib.setText(attribute_datas.get(code_attr_number, ""))
+            self.ui.num_attrib.setText(attribute_datas.number)
 
-            self.ui.name_attrib.setText(attribute_datas.get(code_attr_name, ""))
-            self.ui.name_attrib.setToolTip(attribute_datas.get(code_attr_tooltips, ""))
+            self.ui.name_attrib.setText(attribute_datas.name)
+            self.ui.name_attrib.setToolTip(attribute_datas.tooltips)
 
-            self.attrib_option = attribute_datas.get(code_attr_option, code_attr_combo_str_edit)
+            self.attrib_option = attribute_datas.option
 
         else:
 
@@ -43,7 +41,7 @@ class AttributeCombobox(QWidget):
 
         # ----------------------------------
 
-        self.combo_model = model_combo
+        self.combo_model = attribute_datas.enumeration
 
         self.combo_filter = QSortFilterProxyModel()
         self.combo_filter.setFilterCaseSensitivity(Qt.CaseInsensitive)
@@ -91,7 +89,7 @@ class AttributeCombobox(QWidget):
 
             self.ui.lock_attrib.setToolTip(self.tr("Cette liste déroulante n'est pas éditable"))
 
-            self.ui.value_attrib.setValidator(ValidatorModel(self.ui.value_attrib.model()))
+            self.ui.value_attrib.setValidator(ValidatorModel(model=self.ui.value_attrib.model(), column_index=1))
 
     @staticmethod
     def a___________________combobox_changed______():
@@ -167,21 +165,57 @@ class AttributeCombobox(QWidget):
         if not self.isVisible():
             return
 
-        valeur_originale = self.qs_value.text()
-        nouveau_texte = self.ui.value_attrib.currentText()
+        value_current = self.qs_value.text()
+        value_new = self.ui.value_attrib.currentText()
 
-        ancien_index = self.qs_index.text()
-        nouvel_index = self.ui.index_attrib.text()
+        value_index_current = self.qs_index.text()
+        value_index_new = self.ui.index_attrib.text()
 
-        if valeur_originale == nouveau_texte and ancien_index == nouvel_index:
+        if value_current == value_new and value_index_current == value_index_new:
             return
 
-        self.qs_value.setText(nouveau_texte)
-        self.qs_index.setText(nouvel_index)
+        self.qs_value.setText(value_new)
+        self.qs_index.setText(value_index_new)
 
-        self.attribute_changed_signal.emit(self.qs_value,
-                                           self.ui.num_attrib.text(), valeur_originale, nouveau_texte, ancien_index,
-                                           nouvel_index)
+        # -------------
+
+        number_current = self.ui.num_attrib.text()
+
+        value_dict = {number_current: [value_current, value_new]}
+
+        # -------------
+
+        qs_parent = self.qs_value.parent()
+
+        if not isinstance(qs_parent, QStandardItem):
+            print("attribute_combobox -- combo_update_datas -- not isinstance(qs_parent, QStandardItem)")
+            return
+
+        # -------------
+
+        guid_parent = qs_parent.data(user_guid)
+
+        if not isinstance(guid_parent, str):
+            print("attribute_combobox -- combo_update_datas -- not isinstance(guid_parent, str)")
+            return
+
+        # -------------
+
+        parent_name = qs_parent.text()
+
+        if not isinstance(parent_name, str):
+            print("attribute_combobox -- combo_update_datas -- not isinstance(parent_name, str)")
+            return
+
+        # -------------
+
+        data = AttributeModifyData(number_current=number_current,
+                                   value_new=value_current,
+                                   value_index_new=value_index_current)
+
+        attribute_data = [data]
+
+        self.attribute_changed_signal.emit(guid_parent, attribute_data, parent_name, value_dict)
 
     @staticmethod
     def a___________________event______():
@@ -212,6 +246,8 @@ class AttributeCombobox(QWidget):
 
         if event.type() != QEvent.KeyPress:
             return super().eventFilter(obj, event)
+
+        event: QEvent.KeyPress
 
         if event.key() == Qt.Key_Up or event.key() == Qt.Key_Down:
             event.ignore()

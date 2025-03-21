@@ -4,7 +4,7 @@
 from PyQt5.Qt import *
 
 from allplan_manage import AllplanDatas
-from main_datas import get_icon, material_icon, component_icon
+from main_datas import get_icon, material_icon, component_icon, user_data_type, component_code, material_code
 from tools import get_look_tableview, qm_check, MyContextMenu
 from ui_attribute_link import Ui_AttributeLink
 
@@ -43,27 +43,60 @@ class AttributeLink(QWidget):
     def material_show(self):
         self.material_open.emit(self.material_name)
 
-    def component_show(self, qm_component: QModelIndex):
+    def component_show(self, qm: QModelIndex):
 
-        if not qm_check(qm_component):
+        if not qm_check(qm):
             return
 
-        if qm_component.column() != 0:
-            qm_component = self.link_model.index(qm_component.row(), 0)
-            if not qm_check(qm_component):
+        if qm.column() != 0:
+            qm = self.link_model.index(qm.row(), 0)
+            if not qm_check(qm):
                 return
 
-        component_txt = qm_component.data()
+        item_text = qm.data()
 
-        if isinstance(component_txt, str) and component_txt != "":
-            self.component_open.emit(self.material_name, component_txt)
+        if not isinstance(item_text, str):
+            return
+
+        if item_text == "":
+            return
+
+        item_type = qm.data(user_data_type)
+
+        if item_type == component_code:
+
+            qm_parent = qm.parent()
+
+            if qm_check(qm_parent) is None:
+                parent_name = self.material_name
+            else:
+
+                parent_name = qm_parent.data()
+
+            if not isinstance(parent_name, str):
+                return
+
+            self.component_open.emit(parent_name, item_text)
+
+        elif item_type == material_code:
+            self.material_open.emit(item_text)
 
     def menu_show(self, point: QPoint):
 
-        qm_component = self.ui.liste_composants.indexAt(point)
+        qm = self.ui.liste_composants.indexAt(point)
 
-        if not qm_check(qm_component):
+        if not qm_check(qm):
             return
+
+        if qm.parent() is None:
+            material_name = self.material_name
+        else:
+            material_name = qm.data()
+
+            if not isinstance(material_name, str):
+                return
+
+        item_type = qm.data(user_data_type)
 
         point = QPoint(point.x(), point.y() + 35)
 
@@ -73,11 +106,12 @@ class AttributeLink(QWidget):
 
         menu.add_action(qicon=get_icon(material_icon),
                         title=self.tr("Afficher l'ouvrage"),
-                        action=self.material_show)
+                        action=self.material_open.emit(material_name))
 
-        menu.add_action(qicon=get_icon(component_icon),
-                        title=self.tr('Afficher le composant'),
-                        action=lambda: self.component_show(qm_component=qm_component))
+        if item_type == component_code:
+            menu.add_action(qicon=get_icon(component_icon),
+                            title=self.tr('Afficher le composant'),
+                            action=lambda: self.component_show(qm=qm))
 
         menu.exec_(self.ui.liste_composants.mapToGlobal(point))
 
@@ -99,3 +133,7 @@ class AttributeLink(QWidget):
             self.ui.liste_composants.header().resizeSection(0, size_now)
         else:
             self.ui.liste_composants.header().setSectionResizeMode(0, QHeaderView.Interactive)
+
+    @staticmethod
+    def a___________________end______():
+        pass

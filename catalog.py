@@ -9,16 +9,16 @@ from convert_manage import BddTypeDetection
 from formatting_widget import Formatting
 from main_datas import app_setting_file
 from tools import afficher_message as msg
-from tools import get_look_tableview, make_backup, find_folder_path, get_bdd_paths
+from tools import get_look_tableview, make_backup, find_folder_path, get_bdd_paths, browser_file
 from tools import settings_save, catalog_name_is_correct, move_window_tool, get_look_combobox
 from tools import verification_projet, parcourir_dossier, get_real_path_of_apn_file, find_filename, get_project_use
 from ui_catalog_new import Ui_CatalogNew
 from ui_catalog_update import Ui_CatalogUpdate
-from browser import browser_file
 
 col_save_nom = 0
 col_save_chemin = 1
-convert_valid_bdd = [type_allmetre_a, type_allmetre_e, bdd_type_bcm, bdd_type_kukat, bdd_type_nevaris]
+convert_valid_bdd = [bdd_type_allmetre_a, bdd_type_allmetre_e, bdd_type_bcm, bdd_type_kukat, bdd_type_nevaris,
+                     bdd_type_bcm_c]
 
 
 class WidgetCatalogNew(QWidget):
@@ -33,6 +33,8 @@ class WidgetCatalogNew(QWidget):
         self.asc.langue_change.connect(lambda main=self: self.ui.retranslateUi(main))
 
         self.widget_options = Formatting()
+
+        # -------------
 
         self.new = True
         self.convert_bdd = False
@@ -89,6 +91,12 @@ class WidgetCatalogNew(QWidget):
         self.ui.datas_apn_browse.clicked.connect(self.allplan_apn)
 
         # -------------
+        # Attribut par défaut
+        # -------------
+
+        get_look_combobox(self.ui.attribute_list)
+
+        # -------------
         # Chemin base de données
         # -------------
 
@@ -101,21 +109,32 @@ class WidgetCatalogNew(QWidget):
         self.ui.bt_creation.clicked.connect(self.catalog_new_creation_start)
         self.ui.bt_quitter.clicked.connect(self.close)
 
-    def personnalisation(self, new=False, modify=False, convert_bdd=False):
+    def personnalisation(self, new=False, modify=False, convert_bdd=False, file_path="") -> bool:
 
         self.new = new
         self.convert_bdd = convert_bdd
         self.modify = modify
 
+        # -------------
+
+        self.catalog_attribute_load()
+
+        # -------------
+
         if new + convert_bdd + modify != 1:
-            return
+            return False
+
+        # -------------
 
         self.setAcceptDrops(self.convert_bdd)
+
+        # -------------
 
         if new:
 
             self.ui.save_widget.show()
             self.ui.bdd_widget.hide()
+            self.ui.attribute_widget.show()
 
             self.ui.bt_creation.setText(self.tr("Création"))
             self.setWindowTitle(self.tr("Nouveau catalogue"))
@@ -124,6 +143,7 @@ class WidgetCatalogNew(QWidget):
 
             self.ui.save_widget.hide()
             self.ui.bdd_widget.hide()
+            self.ui.attribute_widget.show()
 
             self.ui.bt_creation.setText(self.tr("Modifier"))
             self.setWindowTitle(self.tr("Modifier les paramètres"))
@@ -132,12 +152,13 @@ class WidgetCatalogNew(QWidget):
 
             self.ui.save_widget.show()
             self.ui.bdd_widget.show()
+            self.ui.attribute_widget.hide()
 
             self.ui.bt_creation.setText(self.tr("Importer"))
             self.setWindowTitle(self.tr("Convertir"))
 
         else:
-            return
+            return False
 
         # -------------------
         # Nom catalogue
@@ -146,8 +167,10 @@ class WidgetCatalogNew(QWidget):
         if modify:
             self.ui.cat_name.setText(self.catalog.catalog_name)
 
+        elif convert_bdd and file_path != "":
+            if not self.recherche_valide(file_path=file_path, add=True, message=False):
+                return False
         else:
-
             self.ui.cat_name.setText(self.catalog_find_name())
 
         self.ui.cat_name.setEnabled(not modify)
@@ -168,12 +191,12 @@ class WidgetCatalogNew(QWidget):
         self.ui.version_list.blockSignals(False)
 
         if version_allplan not in self.allplan.version_datas:
-            return
+            return False
 
         version_obj = self.allplan.version_datas[version_allplan]
 
         if not isinstance(version_obj, AllplanPaths):
-            return
+            return False
 
         dossier_std = version_obj.std_path
 
@@ -224,6 +247,8 @@ class WidgetCatalogNew(QWidget):
 
         self.ui.datas_path.setText(chemin_donnees)
 
+        # -------------------
+
         self.setMaximumHeight(16777215)
 
         width = self.width()
@@ -233,11 +258,44 @@ class WidgetCatalogNew(QWidget):
         self.resize(width, self.height())
         self.setMaximumHeight(self.height())
 
+        # -------------------
+
         self.catalog_title_change()
 
         move_window_tool(widget_parent=self.asc, widget_current=self, always_center=True)
 
         self.show()
+        return True
+
+    def catalog_attribute_load(self) -> None:
+
+        self.ui.attribute_list.clear()
+
+        attributes_list = list()
+        current_index = -1
+
+        self.allplan: AllplanDatas
+
+        for number in attribut_default_obj.valid_list:
+
+            if number == attribut_default_obj.current:
+                current_index = len(attributes_list)
+
+            if number == "":
+                attributes_list.append(self.tr("Aucun"))
+                continue
+
+            name = self.allplan.find_number_by_number(number=number)
+
+            if name != "":
+                attributes_list.append(f"{number} -- {name}")
+
+        self.ui.attribute_list.addItems(attributes_list)
+
+        if current_index == -1:
+            return
+
+        self.ui.attribute_list.setCurrentIndex(current_index)
 
     def catalog_find_name(self) -> str:
 
@@ -264,9 +322,19 @@ class WidgetCatalogNew(QWidget):
 
     def catalog_browser(self):
 
-        if isinstance(self.allplan.allplan_paths, AllplanPaths):
+        version_allplan = self.ui.version_list.currentText()
 
-            path_default = self.allplan.allplan_paths.std_path
+        if version_allplan in self.allplan.version_datas:
+
+            version_obj = self.allplan.version_datas[version_allplan]
+
+        else:
+
+            version_obj = self.allplan.allplan_paths
+
+        if isinstance(version_obj, AllplanPaths):
+
+            path_default = version_obj.std_path
 
             # shortcuts_list = [self.allplan.allplan_paths.etc_cat_path,
             #                   self.allplan.allplan_paths.std_cat_path,
@@ -282,7 +350,7 @@ class WidgetCatalogNew(QWidget):
                                     registry=[app_setting_file, "path_catalog_save"],
                                     current=self.ui.save_path.text(),
                                     default=path_default,
-                                    use_setting_first=True)
+                                    use_setting_first=False)
         if dossier == "":
             return
 
@@ -416,14 +484,25 @@ class WidgetCatalogNew(QWidget):
 
     def datas_browser(self):
 
-        if isinstance(self.allplan.allplan_paths, AllplanPaths):
+        version_allplan = self.ui.version_list.currentText()
 
-            path_default = self.allplan.allplan_paths.prj_path
+        if version_allplan in self.allplan.version_datas:
+
+            version_obj = self.allplan.version_datas[version_allplan]
+
+        else:
+
+            version_obj = self.allplan.allplan_paths
+
+        if isinstance(version_obj, AllplanPaths):
+
+            path_default = version_obj.prj_path
 
             # shortcuts_list = [self.allplan.allplan_paths.etc_cat_path,
             #                   self.allplan.allplan_paths.std_cat_path,
             #                   self.allplan.allplan_paths.prj_path,
             #                   self.allplan.allplan_paths.tmp_path]
+
         else:
             path_default = ""
 
@@ -454,17 +533,28 @@ class WidgetCatalogNew(QWidget):
             return
 
         self.ui.datas_path.setText(dossier)
+        self.ui.datas_prj.setChecked(True)
 
     def allplan_apn(self):
 
-        if isinstance(self.allplan.allplan_paths, AllplanPaths):
+        version_allplan = self.ui.version_list.currentText()
 
-            path_default = self.allplan.allplan_paths.prj_path
+        if version_allplan in self.allplan.version_datas:
 
-            shortcuts_list = [self.allplan.allplan_paths.etc_cat_path,
-                              self.allplan.allplan_paths.std_cat_path,
-                              self.allplan.allplan_paths.prj_path,
-                              self.allplan.allplan_paths.tmp_path]
+            version_obj = self.allplan.version_datas[version_allplan]
+
+        else:
+
+            version_obj = self.allplan.allplan_paths
+
+        if isinstance(version_obj, AllplanPaths):
+
+            path_default = version_obj.prj_path
+
+            shortcuts_list = [version_obj.etc_cat_path,
+                              version_obj.std_cat_path,
+                              version_obj.prj_path,
+                              version_obj.tmp_path]
         else:
             path_default = ""
 
@@ -525,14 +615,24 @@ class WidgetCatalogNew(QWidget):
 
     def bdd_browser(self):
 
-        if isinstance(self.allplan.allplan_paths, AllplanPaths):
+        version_allplan = self.ui.version_list.currentText()
 
-            path_default = self.allplan.allplan_paths.std_path
+        if version_allplan in self.allplan.version_datas:
 
-            shortcuts_list = [self.allplan.allplan_paths.etc_cat_path,
-                              self.allplan.allplan_paths.std_cat_path,
-                              self.allplan.allplan_paths.prj_path,
-                              self.allplan.allplan_paths.tmp_path]
+            version_obj = self.allplan.version_datas[version_allplan]
+
+        else:
+
+            version_obj = self.allplan.allplan_paths
+
+        if isinstance(version_obj, AllplanPaths):
+
+            path_default = version_obj.std_path
+
+            shortcuts_list = [version_obj.etc_cat_path,
+                              version_obj.std_cat_path,
+                              version_obj.prj_path,
+                              version_obj.tmp_path]
 
         else:
             path_default = ""
@@ -575,6 +675,8 @@ class WidgetCatalogNew(QWidget):
 
         check = detection_tool.search_bdd_type(file_path=file_path)
 
+        modifiers = QApplication.keyboardModifiers()
+
         if not check:
             return False
 
@@ -582,16 +684,19 @@ class WidgetCatalogNew(QWidget):
         bdd_title = detection_tool.bdd_title
         file_path = detection_tool.file_path
 
-        if bdd_type == type_bcm_c and message:
-            msg(titre=self.windowTitle(),
-                message=self.tr("Cette base de données est une base composant."),
-                icone_critique=True)
+        if bdd_type == bdd_type_bcm_c and modifiers != Qt.ControlModifier:
+
+            if message:
+                msg(titre=self.windowTitle(),
+                    message=self.tr("Cette base de données est une base composant."),
+                    icone_critique=True)
             return False
 
-        if bdd_type == bdd_type_xml and message:
-            msg(titre=self.windowTitle(),
-                message=self.tr("Cette base de données est déjà un Smart-Catalogue."),
-                icone_critique=True)
+        if bdd_type == bdd_type_xml:
+            if message:
+                msg(titre=self.windowTitle(),
+                    message=self.tr("Cette base de données est déjà un Smart-Catalogue."),
+                    icone_critique=True)
             return False
 
         if bdd_type not in convert_valid_bdd:
@@ -620,7 +725,7 @@ class WidgetCatalogNew(QWidget):
 
         title_current = self.ui.cat_name.text()
 
-        if title_current.startswith(self.tr("Nouveau catalogue")) or title == "":
+        if title_current.startswith(self.tr("Nouveau catalogue")) and title != "":
             self.ui.cat_name.setText(title)
             self.catalog_title_change()
 
@@ -647,42 +752,102 @@ class WidgetCatalogNew(QWidget):
                 icone_critique=True)
             return
 
+        # -----------------
+
         version_allplan = self.ui.version_list.currentText()
         user_folder = self.ui.datas_path.text()
 
-        self.close()
+        attribute_current = attribut_default_obj.get_value(index=self.ui.attribute_list.currentIndex())
+
+        attribute_old = attribut_default_obj.current
+
+        # -----------------
 
         if self.new:
+
+            if not self.catalog.catalog_save_ask():
+                return
+
+            # ------
+
+            self.close()
+
+            # ------
 
             if not self.catalog.catalog_create_new(catalog_folder=catalog_folder,
                                                    catalog_name=catalog_name,
                                                    user_folder=user_folder,
-                                                   version_allplan=version_allplan):
+                                                   version_allplan=version_allplan,
+                                                   attribute_number=attribute_current):
                 return
 
+            # ------
+
+            attribut_default_obj.set_current(number=attribute_current)
+
+            # ------
+
             self.catalog.catalog_load_start(catalog_path=catalog_path)
+
             return
+
+        # -----------------
 
         if self.modify:
 
             if (self.allplan.version_allplan_current == self.ui.version_list.currentText() and
-                    self.allplan.catalog_user_path == self.ui.datas_path.text()):
+                    self.allplan.catalog_user_path == self.ui.datas_path.text() and
+                    attribute_old == attribute_current):
+
+                self.close()
+
                 return
+
+            # ------
 
             if not self.catalog.catalog_create_path_file(catalog_folder=self.catalog.catalog_folder,
                                                          catalog_name=self.catalog.catalog_name,
                                                          user_data_path=user_folder,
-                                                         allplan_version=version_allplan):
+                                                         allplan_version=version_allplan,
+                                                         attribute_default=attribute_current):
                 return
+
+            # ------
+
+            attribut_default_obj.set_current(number=attribute_current)
+
+            # ------
+
+            if attribute_old != attribute_current:
+
+                if not self.catalog.catalog_save_action(exlcude_default_attribute=attribute_old):
+                    return
+
+            elif not self.catalog.catalog_save_ask():
+                return
+
+            # ------
+
+            self.close()
+
+            # ------
 
             self.catalog.catalog_load_start(catalog_path=self.catalog.catalog_path)
 
-            if self.allplan.version_allplan_current != self.ui.version_list.currentText():
-                CatalogSave(self.asc, self.catalog, self.allplan)
-
             return
 
+        # -----------------
+
         if self.convert_bdd:
+
+            if not self.catalog.catalog_save_ask():
+                return
+
+            # ------
+
+            self.close()
+
+            # ------
 
             a = self.tr("Attention, une mauvaise configuration de la version d'Allplan et du chemin de données")
             b = self.tr("peut entrainer la perte d'informations ou la corruption du catalogue")
@@ -697,37 +862,49 @@ class WidgetCatalogNew(QWidget):
             if not self.catalog.catalog_create_path_file(catalog_folder=catalog_folder,
                                                          catalog_name=catalog_name,
                                                          user_data_path=user_folder,
-                                                         allplan_version=version_allplan):
+                                                         allplan_version=version_allplan,
+                                                         attribute_default=attribute_current):
                 return
+
+            # ------
 
             chemin_bdd = self.ui.bdd_path.text()
 
-            if self.bdd_type in [type_allmetre_a, type_allmetre_e]:
-                loader = "Allmétré"
+            # ------
 
-            elif self.bdd_type == bdd_type_bcm:
-                loader = "BCM"
+            attribut_default_obj.set_current(number=attribute_current)
 
-            elif self.bdd_type == bdd_type_kukat:
-                loader = "KUKAT"
+            # ------
 
-            elif self.bdd_type == bdd_type_nevaris:
-                loader = "NEVARIS"
-
-            else:
+            if self.bdd_type in [bdd_type_allmetre_a, bdd_type_allmetre_e, bdd_type_bcm, bdd_type_bcm_c]:
+                self.catalog_convert_action(catalog_path=catalog_path, loader="BCM", chemin_bdd=chemin_bdd)
                 return
 
-            self.catalog.catalog_load_start(catalog_path=catalog_path, loader=loader, chemin_bdd=chemin_bdd)
+            # ------
 
-            move_window_tool(widget_parent=self.asc, widget_current=self.asc.loading, always_center=True)
+            if self.bdd_type == bdd_type_kukat:
+                self.catalog_convert_action(catalog_path=catalog_path, loader="KUKAT", chemin_bdd=chemin_bdd)
+                return
 
-            self.asc.loading.launch_show(self.tr("Enregistrement du catalogue ..."))
+            # ------
 
-            CatalogSave(self.asc, self.catalog, self.allplan)
+            if self.bdd_type == bdd_type_nevaris:
+                self.catalog_convert_action(catalog_path=catalog_path, loader="NEVARIS", chemin_bdd=chemin_bdd)
+                return
 
-            self.asc.loading.hide()
+    def catalog_convert_action(self, catalog_path: str, loader: str, chemin_bdd: str):
 
-            self.asc.modification_mod = False
+        self.catalog.catalog_load_start(catalog_path=catalog_path, loader=loader, chemin_bdd=chemin_bdd)
+
+        move_window_tool(widget_parent=self.asc, widget_current=self.asc.loading, always_center=True)
+
+        self.asc.loading.launch_show(self.tr("Enregistrement du catalogue ..."))
+
+        CatalogSave(self.asc, self.catalog, self.allplan)
+
+        self.asc.loading.hide()
+
+        self.asc.modification_mod = False
 
     @staticmethod
     def a___________________event______():

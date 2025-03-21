@@ -5,8 +5,7 @@
 from PyQt5.Qt import *
 
 from catalog_manage import CatalogDatas
-from hierarchy_qs import folder_code, material_code, component_code, link_code, attribute_code
-from main_datas import get_icon
+from main_datas import get_icon, folder_code, material_code, component_code, link_code, attribute_code
 from tools import get_look_treeview, taille_police, qm_check
 from ui_paste import Ui_Paste
 

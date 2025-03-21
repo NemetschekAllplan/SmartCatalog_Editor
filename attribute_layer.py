@@ -4,6 +4,8 @@
 from PyQt5.Qt import *
 
 from allplan_manage import AllplanDatas
+from history_manage import AttributeModifyData
+from main_datas import user_guid
 from tools import ValidatorDouble, get_look_combobox
 from tools import ValidatorInt
 from tools import set_appareance_button, ValidatorModel
@@ -12,8 +14,7 @@ from structure_widget import WidgetStructure
 
 
 class AttributeLayer(QWidget):
-
-    attribute_changed_signal = pyqtSignal(QStandardItem, str, str, str, str, str, dict, str)
+    attribute_changed_signal = pyqtSignal(str, list, str, dict, str)
 
     def __init__(self, asc):
         super().__init__()
@@ -69,7 +70,7 @@ class AttributeLayer(QWidget):
         qcompleter_141.setCompletionMode(QCompleter.UnfilteredPopupCompletion)
         qcompleter_141.setCaseSensitivity(Qt.CaseInsensitive)
 
-        self.ui.value_141.setValidator(ValidatorModel(self.allplan.model_layers))
+        self.ui.value_141.setValidator(ValidatorModel(model=self.allplan.model_layers, column_index=1))
 
         self.ui.value_141.lineEdit().textEdited.connect(self.filtre_layer.setFilterFixedString)
         self.ui.value_141.currentIndexChanged.connect(self.changement_layer)
@@ -434,73 +435,155 @@ class AttributeLayer(QWidget):
 
     def mise_a_jour_chb(self):
 
-        valeur_originale = self.qs_349.text()
-        nouveau_texte = self.ui.index_349.text()
+        value_current = self.qs_349.text()
+        value_new = self.ui.index_349.text()
 
-        if valeur_originale == nouveau_texte:
+        if value_current == value_new:
             return
 
         if not self.ui.index_349.isVisible():
             return
 
-        self.qs_349.setText(nouveau_texte)
+        self.qs_349.setText(value_new)
 
         numero_layer = self.ui.index_141.text()
 
         if numero_layer == 0:
             return
 
-        self.attribute_changed_signal.emit(self.qs_349, "349", valeur_originale, nouveau_texte, '-1', '-1', dict(), "")
+        # -------------
+
+        qs_parent = self.qs_141_val.parent()
+
+        if not isinstance(qs_parent, QStandardItem):
+            print("attribute_date -- date_update -- not isinstance(qs_parent, QStandardItem)")
+            return
+
+        # -------------
+
+        guid_parent = qs_parent.data(user_guid)
+
+        if not isinstance(guid_parent, str):
+            print("attribute_date -- date_update -- not isinstance(guid_parent, str)")
+            return
+
+        # -------------
+
+        parent_name = qs_parent.text()
+
+        if not isinstance(parent_name, str):
+            print("attribute_date -- date_update -- not isinstance(parent_name, str)")
+            return
+
+        # -------------
+
+        attribute_type = self.tr("Groupe Layer")
+        attribute_data = [AttributeModifyData(number_current="349", value_new=value_current)]
+        value_dict = {"349": [value_current, value_new]}
+
+        self.attribute_changed_signal.emit(guid_parent, attribute_data, parent_name, value_dict, attribute_type)
 
     @staticmethod
     def a___________________changement_combo______():
         pass
 
     def mise_a_jour(self, qs_val: QStandardItem, qs_ind: QStandardItem,
-                    numero: str, widget_combo: QComboBox, widget_index: QLabel):
+                    number_current: str, widget_combo: QComboBox, widget_index: QLabel):
 
-        valeur_originale = qs_val.text()
-        nouveau_texte = widget_combo.currentText()
+        value_current = qs_val.text()
+        value_new = widget_combo.currentText()
 
-        ancien_index = qs_ind.text()
-        nouvel_index = widget_index.text()
+        value_index_current = qs_ind.text()
+        value_index_new = widget_index.text()
 
-        if valeur_originale == nouveau_texte and ancien_index == nouvel_index:
+        if value_current == value_new and value_index_current == value_index_new:
             return
+
+        # -------------
 
         if not widget_combo.isVisible():
             return
 
-        qs_val.setText(nouveau_texte)
-        qs_ind.setText(nouvel_index)
+        # -------------
 
-        if numero != "141":
-            self.attribute_changed_signal.emit(qs_val, numero, valeur_originale, nouveau_texte, ancien_index,
-                                               nouvel_index, dict(), "")
+        qs_val.setText(value_new)
+        qs_ind.setText(value_index_new)
+
+        # -------------
+
+        qs_parent = self.qs_141_val.parent()
+
+        if not isinstance(qs_parent, QStandardItem):
+            print("attribute_date -- date_update -- not isinstance(qs_parent, QStandardItem)")
             return
 
-        if nouvel_index != "0":
-            self.attribute_changed_signal.emit(qs_val, numero, valeur_originale, nouveau_texte, ancien_index,
-                                               nouvel_index, dict(), "")
+        # -------------
+
+        guid_parent = qs_parent.data(user_guid)
+
+        if not isinstance(guid_parent, str):
+            print("attribute_date -- date_update -- not isinstance(guid_parent, str)")
             return
+
+        # -------------
+
+        parent_name = qs_parent.text()
+
+        if not isinstance(parent_name, str):
+            print("attribute_date -- date_update -- not isinstance(parent_name, str)")
+            return
+
+        # -------------
+
+        data = AttributeModifyData(number_current=number_current,
+                                   value_new=value_current,
+                                   value_index_new=value_index_current,
+                                   guid_desc=None)
+
+        attribute_data = [data]
+
+        # -------------
+
+        value_dict = {number_current: [value_current, value_new]}
+
+        # -------------
+
+        attribute_type = self.tr("Groupe Layer")
+
+        # -------------
+
+        if number_current != "141":
+            self.attribute_changed_signal.emit(guid_parent, attribute_data, parent_name, value_dict, attribute_type)
+            return
+
+        # -------------
+
+        if value_index_new != "0":
+            self.attribute_changed_signal.emit(guid_parent, attribute_data, parent_name, value_dict, attribute_type)
+            return
+
+        # -------------
 
         chb_style = self.ui.index_349.text()
 
         if chb_style == 0:
-            self.attribute_changed_signal.emit(qs_val, numero, valeur_originale, nouveau_texte, ancien_index,
-                                               nouvel_index, dict(), "")
+            self.attribute_changed_signal.emit(guid_parent, attribute_data, parent_name, value_dict, attribute_type)
             return
 
-        valeur_originale_349 = self.qs_349.text()
+        # -------------
 
-        dict_comp = {"349": {"numero": "349",
-                             "valeur_originale": valeur_originale_349,
-                             "nouveau_texte": "0",
-                             "ancien_index": "-1",
-                             "nouvel_index": "-1"}}
+        value_current_349 = self.qs_349.text()
 
-        self.attribute_changed_signal.emit(qs_val, numero, valeur_originale, nouveau_texte, ancien_index,
-                                           nouvel_index, dict_comp, "Layer")
+        value_dict["349"] = [value_current_349, "0"]
+
+        data = AttributeModifyData(number_current="349",
+                                   value_new=value_current_349)
+
+        attribute_data.append(data)
+
+        # -------------
+
+        self.attribute_changed_signal.emit(guid_parent, attribute_data, parent_name, value_dict, attribute_type)
 
     @staticmethod
     def a___________________changement_donnees______():
@@ -521,7 +604,7 @@ class AttributeLayer(QWidget):
 
             self.mise_a_jour(qs_val=qs_val,
                              qs_ind=qs_ind,
-                             numero=numero,
+                             number_current=numero,
                              widget_combo=widget_combo,
                              widget_index=widget_index)
             return
@@ -552,7 +635,7 @@ class AttributeLayer(QWidget):
 
         self.mise_a_jour(qs_val=qs_val,
                          qs_ind=qs_ind,
-                         numero=numero,
+                         number_current=numero,
                          widget_combo=widget_combo,
                          widget_index=widget_index)
 
@@ -641,6 +724,8 @@ class AttributeLayer(QWidget):
             if event.type() != QEvent.KeyPress:
                 return super().eventFilter(obj, event)
 
+            event: QEvent.KeyPress
+
             if event.key() == Qt.Key_Up or event.key() == Qt.Key_Down:
                 event.ignore()
                 return True
@@ -665,6 +750,8 @@ class AttributeLayer(QWidget):
 
             if event.type() != QEvent.KeyPress:
                 return super().eventFilter(obj, event)
+
+            event: QEvent.KeyPress
 
             if event.key() == Qt.Key_Up or event.key() == Qt.Key_Down:
                 event.ignore()
@@ -706,6 +793,8 @@ class AttributeLayer(QWidget):
             if event.type() != QEvent.KeyPress:
                 return super().eventFilter(obj, event)
 
+            event: QEvent.KeyPress
+
             if event.key() == Qt.Key_Up or event.key() == Qt.Key_Down:
                 event.ignore()
                 return True
@@ -745,6 +834,8 @@ class AttributeLayer(QWidget):
 
             if event.type() != QEvent.KeyPress:
                 return super().eventFilter(obj, event)
+
+            event: QEvent.KeyPress
 
             if event.key() == Qt.Key_Up or event.key() == Qt.Key_Down:
                 event.ignore()

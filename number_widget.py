@@ -4,7 +4,7 @@
 
 from PyQt5.Qt import *
 
-from hierarchy_qs import material_code
+from hierarchy import material_code
 from main_datas import number_setting_file, number_setting_datas, component_code
 from tools import settings_read, settings_save, move_window_tool
 from ui_number import Ui_Number

@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*
 
 import os.path
-import subprocess
 
 from attribute_add import AttributesWidget
 from attributes_loader import AttributesDetailLoader
@@ -10,25 +9,27 @@ from backup_restore import BackupRestore
 from bar_action import ActionBar
 from bar_main import MainBar
 from bar_search import SearchBar
-from catalog import CatalogUpdaterWidget
+from catalog import CatalogUpdaterWidget, WidgetCatalogNew
 from catalog_manage import *
 from convert_manage import ExportExcel
+from error_report import ErrorReport
 from formula import Formula
 from formula_favorite import FormulaFavorite
+from formulaire import Formulaire
+from gestion_update import GestionUpdate
 from help import HelpWidget
+from ktlgwidget import KtlgWidget
 from library import Library
+from main_datas import application_name, application_version
 from message import LoadingSplash
 from models import Models
 from tools import MyContextMenu, get_real_path_of_apn_file, verification_catalogue_correct, help_pressed
 from tools import afficher_message as msg
 from tools import get_look_treeview, find_global_point, copy_to_clipboard
-from tools import settings_read, settings_save, settings_verifications
+from tools import settings_read, settings_save, settings_verifications, browser_file
 from tools import taille_police, open_folder, open_file, convertir_langue
-from main_datas import application_name, application_version
 from ui_main_windows import Ui_MainWindow
-from browser import browser_file
-from error_report import ErrorReport
-import traceback
+from vob import VobWidget
 
 
 class Mainwindow(QMainWindow):
@@ -64,6 +65,7 @@ class Mainwindow(QMainWindow):
         # ---------------------------------------
 
         self.loading = LoadingSplash()
+        self.formulaire_widget = None
 
         # ---------------------------------------
         # ALLPLAN
@@ -74,8 +76,6 @@ class Mainwindow(QMainWindow):
         # ---------------------------------------
         # Catalogue
         # ---------------------------------------
-
-        get_look_treeview(self.ui.hierarchy)
 
         self.catalog = CatalogDatas(self)
 
@@ -97,6 +97,12 @@ class Mainwindow(QMainWindow):
         # ---------------------------------------
 
         self.attributes_detail_loader = AttributesDetailLoader(self)
+
+        # ---------------------------------------
+        # CHARGEMENT Nouveau catalogue
+        # ---------------------------------------
+
+        self.new_catalog_widget = WidgetCatalogNew(self)
 
         # ---------------------------------------
         # CHARGEMENT catalogue
@@ -123,6 +129,7 @@ class Mainwindow(QMainWindow):
         # ---------------------------------------
 
         self.library_widget = Library(self)
+
         self.catalog.close_library_signal.connect(self.library_widget.tabs_reset_all)
 
         # ---------------------------------------
@@ -166,7 +173,7 @@ class Mainwindow(QMainWindow):
         # CHARGEMENT Catalogue
         # ---------------------------------------
 
-        self.main_bar = MainBar(self)
+        self.main_bar = MainBar(asc=self, new_catalog_widget=self.new_catalog_widget)
 
         # ---------------------------------------
         # Loading Error Report
@@ -175,14 +182,25 @@ class Mainwindow(QMainWindow):
         self.report_error_widget = ErrorReport(asc=self)
 
         # ---------------------------------------
+        # Loading VOB
+        # ---------------------------------------
 
-        self.catalog.cat_model.dataChanged.connect(self.catalog.catalog_modif_manage)
+        self.vob_widget = VobWidget(asc=self)
+
+        # ---------------------------------------
+        # Loading Ktlg
+        # ---------------------------------------
+
+        self.ktlg_widget = KtlgWidget(asc=self)
+
+        # ---------------------------------------
+
+        self.ui.hierarchy.cat_model.dataChanged.connect(self.catalog.catalog_modif_manage)
 
         self.ui.hierarchy.expanded.connect(self.catalog.catalog_modif_manage)
-        self.ui.hierarchy.expanded.connect(self.bouton_expand_collapse)
 
-        self.ui.hierarchy.collapsed.connect(self.action_bar.plier_enfants)
-        self.ui.hierarchy.collapsed.connect(self.bouton_expand_collapse)
+        # self.ui.hierarchy.collapsed.connect(self.action_bar.plier_enfants)
+        self.ui.hierarchy.collapsed.connect(self.catalog.catalog_modif_manage)
 
         self.ui.attributes_detail.installEventFilter(self)
 
@@ -268,6 +286,42 @@ class Mainwindow(QMainWindow):
         # ----------
 
         self.catalog.change_made = False
+
+        # ---------------------------------------
+        # Update
+        # ---------------------------------------
+
+        if special_version:
+            self.gestion_update = GestionUpdate(self)
+
+            test = sys.argv[0]
+
+            if test != 'C:\\Stockage\\GIT\\GitHub\\smartest2\\smartcatalog.py':
+                self.gestion_update.check_update(show_message=False)
+
+            # if self.langue == "FR":
+
+            # data = settings_get(app_setting_file, "message")
+            #
+            # if data != application_version:
+            #     msg(titre=f"{application_title} -- Nouveautés",
+            #         message="<center>"
+            #                 "Désormais, vous pouvez effectuer un <b>glisser-déposer</b><br>"
+            #                 "des éléments des <b>bibles externes vers le catalogue.</b><br>"
+            #                 "<br>"
+            #                 "Nouveau menu pour la liste des fichiers récents avec filtres<br>"
+            #                 "<br>"
+            #                 "Lors d’une recherche de formules contenant des erreurs,<br>"
+            #                 "après correction d’une formule utilisée à plusieurs endroits,<br>"
+            #                 "il vous sera proposé de les corriger toutes automatiquement.<br>"
+            #                 "<br>"
+            #                 "Pour toute suggestion d’amélioration ou pour signaler un bug,<br>"
+            #                 "n’hésitez pas à nous écrire à : <b>support.fr@allplan.com")
+            #
+            # settings_save_value(app_setting_file, "message", application_version)
+
+        else:
+            self.gestion_update = None
 
     @staticmethod
     def a___________________application_chargement_donnees______():
@@ -481,7 +535,9 @@ class Mainwindow(QMainWindow):
                 return
 
         self.translation_loading()
+
         self.catalog.clipboard_clear_all()
+
         self.allplan.allplan_retranslate()
         self.translation_changed_emit()
 
@@ -491,10 +547,10 @@ class Mainwindow(QMainWindow):
 
     def translation_loading(self):
 
-        trad2 = f"{asc_exe_path}translation\\{self.langue.lower()}.qm"
+        trad2 = f"{asc_folder_path}translation\\{self.langue.lower()}.qm"
 
         if not os.path.exists(trad2):
-            trad2 = f"{asc_exe_path}translation\\en.qm"
+            trad2 = f"{asc_folder_path}translation\\en.qm"
 
         app.removeTranslator(translator)
         translator.load(trad2, QLibraryInfo.location(QLibraryInfo.TranslationsPath))
@@ -544,7 +600,7 @@ class Mainwindow(QMainWindow):
             # liste_fichiers_ouverts.sort()
 
             for path_file in reversed(liste_fichiers):
-                projet = self.main_bar.menu_titre_projet(path_file)
+                projet = self.menu_titre_projet(path_file)
 
                 cat_open_sub_menu.add_action(qicon=get_icon(recent_icon),
                                              title=projet,
@@ -658,7 +714,7 @@ class Mainwindow(QMainWindow):
                                      title="Allplan",
                                      tooltips_visible=False)
 
-        menu_allplan.add_action(qicon=get_icon(allplan_icon),
+        menu_allplan.add_action(qicon=get_icon(refresh_icon),
                                 title=self.tr("Rafraichir les données Allplan"),
                                 action=self.allplan_refresh,
                                 short_link=help_allplan_refresh)
@@ -667,6 +723,26 @@ class Mainwindow(QMainWindow):
                                 title=self.tr("Rapport d'erreurs Allplan"),
                                 action=self.report_error,
                                 short_link=help_allplan_error)
+
+        menu_allplan.addSeparator()
+
+        menu_allplan.add_action(qicon=get_icon(tool_icon),
+                                title=self.tr("Editer fichier VOB"),
+                                action=self.vob_editor_show)
+
+        menu_allplan.add_action(qicon=get_icon(tool_icon),
+                                title=self.tr("Bibliothèque assignée"),
+                                action=self.ktlg_editor_show)
+
+        menu_allplan.addSeparator()
+
+        menu_allplan.add_action(qicon=get_icon(":/Images/etc.png"),
+                                title=self.tr("Personnaliser dossiers SmartCatalog"),
+                                action=self.allplan.allplan_customize_folder_name_apply)
+
+        menu_allplan.add_action(qicon=get_icon(reset_icon),
+                                title=self.tr("Réinitialiser dossiers SmartCatalog"),
+                                action=self.allplan.allplan_customize_folder_name_remove)
 
         menu_allplan.addSeparator()
 
@@ -738,6 +814,17 @@ class Mainwindow(QMainWindow):
                                             title=message,
                                             action=lambda val=avertissement: self.settings_reset_param(val))
             menu.addMenu(warning_sub_menu)
+
+        if special_version:
+            menu.addSeparator()
+
+            menu.add_action(qicon=get_icon(update_app_icon),
+                            title="Rechercher mise à jour",
+                            action=self.app_update)
+
+            menu.add_action(qicon=get_icon(outlook_icon),
+                            title="Contacter support",
+                            action=self.envoyer_message)
 
         menu.addSeparator()
 
@@ -927,6 +1014,29 @@ class Mainwindow(QMainWindow):
         self.ui.end_title.setMinimumHeight(title_height)
 
     @staticmethod
+    def menu_titre_projet(chemin) -> str:
+
+        nom_catalogue = os.path.basename(chemin)
+
+        if ".prj" not in chemin:
+            return nom_catalogue
+
+        try:
+            start = chemin.rfind("\\", 0, chemin.find(".prj"))
+            end = chemin.find(".prj")
+
+            if start == -1:
+                return nom_catalogue
+            elif end == 3:
+                return nom_catalogue
+            else:
+                nom_fichier = chemin[start + 1:end]
+                return f"{nom_fichier} --> {nom_catalogue}"
+
+        except ValueError:
+            return nom_catalogue
+
+    @staticmethod
     def a___________________boutons______():
         pass
 
@@ -1071,7 +1181,7 @@ class Mainwindow(QMainWindow):
         if self.catalog.clipboard_current == "":
             return ""
 
-        liste_selection_qstandarditem = self.catalog.get_qs_selection_list()
+        liste_selection_qstandarditem = self.ui.hierarchy.get_qs_selection_list()
 
         nb_selections = len(liste_selection_qstandarditem)
 
@@ -1178,7 +1288,7 @@ class Mainwindow(QMainWindow):
 
         if self.ui.search_error_bt.isChecked() or self.ui.search_bt.isChecked():
 
-            qs = self.catalog.get_current_qs()
+            qs = self.ui.hierarchy.get_current_qs()
 
             if qs is not None:
                 ele_type = qs.data(user_data_type)
@@ -1199,7 +1309,7 @@ class Mainwindow(QMainWindow):
         # Si aucune selection
         # --------------------
 
-        liste_selection_qs = self.catalog.get_qs_selection_list()
+        liste_selection_qs = self.ui.hierarchy.get_qs_selection_list()
         nb_selections = len(liste_selection_qs)
 
         if nb_selections != 0:
@@ -1350,7 +1460,7 @@ class Mainwindow(QMainWindow):
             if not isinstance(qs_selected, (Folder, Material, Component, Link)):
                 continue
 
-            qs_parent = self.catalog.get_parent(qs_selected)
+            qs_parent = self.ui.hierarchy.get_parent(qs=qs_selected)
 
             if not isinstance(qs_parent, QStandardItem):
                 continue
@@ -1367,9 +1477,9 @@ class Mainwindow(QMainWindow):
 
             else:
 
-                if qs_parent == self.catalog.cat_model.invisibleRootItem():
+                if qs_parent == self.ui.hierarchy.cat_model.invisibleRootItem():
 
-                    child_list = self.catalog.get_root_children_type_list()
+                    child_list = self.ui.hierarchy.get_root_children_type_list()
 
                 else:
 
@@ -1392,7 +1502,7 @@ class Mainwindow(QMainWindow):
             if not isinstance(qs_parent, QStandardItem):
                 continue
 
-            if qs_parent == self.catalog.cat_model.invisibleRootItem():
+            if qs_parent == self.ui.hierarchy.cat_model.invisibleRootItem():
 
                 qs_parent_top_index = 0
 
@@ -1458,14 +1568,13 @@ class Mainwindow(QMainWindow):
         return bt_up, bt_down
 
     def bouton_expand_collapse(self):
-        self.catalog.catalog_header_manage()
-        print("smartcatalogue -- gestion_expand_collapse -- fin")
+        self.ui.hierarchy.header_manage()
 
     def open_list_manage(self, catalog_opened_list: list):
 
         nb_items = len(catalog_opened_list)
 
-        if os.path.exists(f"{asc_exe_path}Catalogue - exemples\\2023\\CMI.xml"):
+        if os.path.exists(f"{asc_folder_path}Catalogue - exemples\\2023\\CMI.xml"):
             self.ui.open_list_bt.setEnabled(True)
             return
 
@@ -1484,19 +1593,22 @@ class Mainwindow(QMainWindow):
         if self.catalog.catalog_path == "":
             return attribute_code, False, False, False
 
-        liste_selections_qstandarditem = self.catalog.get_qs_selection_list()
+        liste_selections_qstandarditem = self.ui.hierarchy.get_qs_selection_list()
         nb_selections = len(liste_selections_qstandarditem)
 
         if nb_selections == 0:
             return attribute_code, False, False, False
 
-        liste_selection_detail = self.ui.attributes_detail.selectionModel().selectedRows(0)
+        liste_selection_detail = self.ui.attributes_detail.selectionModel().selectedRows()
         nb_details = len(liste_selection_detail)
 
         if nb_details == 0:
             return attribute_code, False, False, False
 
         for item in liste_selection_detail:
+
+            if item.data(user_data_type) == type_unknown:
+                return attribute_code, True, False, False
 
             index_row = item.row()
 
@@ -1508,7 +1620,7 @@ class Mainwindow(QMainWindow):
     def boutons_recherche(self, actif=None):
 
         if actif is None:
-            if self.catalog.catalog_path == "" or self.catalog.cat_model.rowCount() == 0:
+            if self.catalog.catalog_path == "" or self.ui.hierarchy.cat_model.rowCount() == 0:
                 actif = False
             else:
                 actif = True
@@ -1543,7 +1655,7 @@ class Mainwindow(QMainWindow):
 
         if self.catalog.catalog_path == "":
             self.setWindowTitle(application_title)
-            self.catalog.cat_model.setHorizontalHeaderItem(0, QStandardItem(""))
+            self.ui.hierarchy.cat_model.setHorizontalHeaderItem(0, QStandardItem(""))
             return
 
         if os.path.exists(self.catalog.catalog_path):
@@ -1551,10 +1663,7 @@ class Mainwindow(QMainWindow):
             seconds = os.path.getmtime(self.catalog.catalog_path)
             date_complet_modif = datetime.fromtimestamp(seconds)
 
-            if self.langue == "FR":
-                date_modif = date_complet_modif.strftime("%d-%m-%Y à %H:%M:%S")
-            else:
-                date_modif = date_complet_modif.strftime("%m-%d-%Y à %I:%M:%S %p")
+            date_modif = catalog_xml_date(current_language=self.langue, date_complet_modif=date_complet_modif)
 
             a = self.tr("Dernier enregistrement")
             texte_secondaire = f'{a} : {date_modif}'
@@ -1594,6 +1703,10 @@ class Mainwindow(QMainWindow):
             return False
 
         for backup_path in file_list:
+
+            if not isinstance(backup_path, str):
+                print("smartcatalog -- backup_restore_menu -- not isinstance(backup_path, str)")
+                continue
 
             filename = backup_path.replace(f"{backup_folder}{self.catalog.catalog_name}", "").replace(".xml", "")
 
@@ -1660,52 +1773,131 @@ class Mainwindow(QMainWindow):
 
     @staticmethod
     def dossier_asc():
-        if QApplication.keyboardModifiers() == Qt.ControlModifier:
-            copy_to_clipboard(value=asc_exe_path, show_msg=True)
+        modifiers = QApplication.keyboardModifiers()
 
-        open_folder(asc_exe_path)
+        if modifiers == Qt.ControlModifier or modifiers == Qt.ShiftModifier:
+            copy_to_clipboard(value=asc_folder_path, show_msg=True)
+            return
+
+        open_folder(asc_folder_path)
 
     @staticmethod
     def dossier_export_asc():
-        if QApplication.keyboardModifiers() == Qt.ControlModifier:
+
+        modifiers = QApplication.keyboardModifiers()
+
+        if modifiers == Qt.ControlModifier or modifiers == Qt.ShiftModifier:
             copy_to_clipboard(value=asc_export_path, show_msg=True)
+            return
 
         open_folder(asc_export_path)
 
     @staticmethod
     def dossier_settings_asc():
-        if QApplication.keyboardModifiers() == Qt.ControlModifier:
+        modifiers = QApplication.keyboardModifiers()
+
+        if modifiers == Qt.ControlModifier or modifiers == Qt.ShiftModifier:
             copy_to_clipboard(value=asc_settings_path, show_msg=True)
+            return
 
         open_folder(asc_settings_path)
 
     def dossier_user(self):
 
-        if QApplication.keyboardModifiers() == Qt.ControlModifier:
+        modifiers = QApplication.keyboardModifiers()
+
+        if modifiers == Qt.ControlModifier or modifiers == Qt.ShiftModifier:
             copy_to_clipboard(value=self.allplan.catalog_user_path, show_msg=True)
+            return
 
         open_folder(self.allplan.catalog_user_path)
 
     def dossier_cat(self):
 
-        if QApplication.keyboardModifiers() == Qt.ControlModifier:
+        modifiers = QApplication.keyboardModifiers()
+
+        if modifiers == Qt.ControlModifier or modifiers == Qt.ShiftModifier:
             copy_to_clipboard(value=self.catalog.catalog_folder, show_msg=True)
+            return
 
         open_folder(self.catalog.catalog_folder)
 
     def fichier_cat(self):
 
-        if QApplication.keyboardModifiers() == Qt.ControlModifier:
+        modifiers = QApplication.keyboardModifiers()
+
+        if modifiers == Qt.ControlModifier or modifiers == Qt.ShiftModifier:
             copy_to_clipboard(value=self.catalog.catalog_path, show_msg=True)
+            return
 
         open_file(self.catalog.catalog_path)
 
     def fichier_unite(self):
 
-        if QApplication.keyboardModifiers() == Qt.ControlModifier:
+        modifiers = QApplication.keyboardModifiers()
+
+        if modifiers == Qt.ControlModifier or modifiers == Qt.ShiftModifier:
             copy_to_clipboard(value=self.allplan.unit_file_path, show_msg=True)
+            return
 
         open_file(self.allplan.unit_file_path)
+
+    def vob_editor_show(self):
+
+        allplan_paths = self.allplan.allplan_paths
+
+        if not isinstance(allplan_paths, AllplanPaths):
+            print("smartcatalog -- vob_editor_show -- not isinstance(allplan_paths, AllplanPaths)")
+            return False
+
+        vob_file = f"vob_{allplan_paths.allplan_country}.{allplan_paths.allplan_language}"
+
+        vob_path = f"{allplan_paths.etc_path}{vob_file}"
+
+        # if not os.path.exists(vob_path):
+        #     msg(titre=self.tr("Editer fichier VOB"),
+        #         message=self.tr("Le fichier VOB n'a pas été trouvé."))
+        #     return False
+
+        move_window_tool(widget_parent=self, widget_current=self.vob_widget, always_center=True)
+
+        self.vob_widget.vob_show(file_path=vob_path)
+
+    def ktlg_editor_show(self):
+
+        allplan_paths = self.allplan.allplan_paths
+
+        if not isinstance(allplan_paths, AllplanPaths):
+            print("smartcatalog -- ktlg_editor_show -- not isinstance(allplan_paths, AllplanPaths)")
+            return False
+
+        if self.allplan.allplan_is_runnig():
+            msg(titre=self.tr("Bibliothèque assignée"),
+                message=self.tr("Veuillez fermer Allplan avant de lancer cette fonction."),
+                icone_avertissement=True)
+            return False
+
+        # ------
+
+        ktlg_path = f"{allplan_paths.usr_path}Local\\ktlg.xml"
+
+        if not os.path.exists(ktlg_path):
+            msg(titre=self.tr("Bibliothèque assignée"),
+                message=self.tr("Le fichier n'a pas été trouvé."))
+            return False
+
+        # ------
+
+        if self.catalog.catalog_name == "":
+            msg(titre=self.tr("Bibliothèque assignée"),
+                message=self.tr("Une erreur est survenue."))
+            return False
+
+        # ------
+
+        move_window_tool(widget_parent=self, widget_current=self.ktlg_widget.light_widget, always_center=True)
+
+        self.ktlg_widget.ktlg_light_show(file_path=ktlg_path, catalog_name=self.catalog.catalog_name)
 
     @staticmethod
     def a___________________export______():
@@ -1743,13 +1935,11 @@ class Mainwindow(QMainWindow):
         if chemin_fichier == "":
             return
 
-        model_cat = self.catalog.cat_model
-
         move_window_tool(widget_parent=self, widget_current=self.loading, always_center=True)
 
         self.loading.launch_show(self.tr("Exporter vers Excel"))
 
-        ExportExcel(self.allplan, model_cat, chemin_fichier)
+        ExportExcel(self.allplan, self.ui.hierarchy.cat_model, chemin_fichier)
 
         self.loading.hide()
 
@@ -1762,7 +1952,9 @@ class Mainwindow(QMainWindow):
         if not isinstance(self.allplan.allplan_paths, AllplanPaths):
             return
 
-        if QApplication.keyboardModifiers() == Qt.ControlModifier:
+        modifiers = QApplication.keyboardModifiers()
+
+        if modifiers == Qt.ControlModifier or modifiers == Qt.ShiftModifier:
             copy_to_clipboard(value=self.allplan.allplan_paths.std_path, show_msg=True)
             return
 
@@ -1773,7 +1965,9 @@ class Mainwindow(QMainWindow):
         if not isinstance(self.allplan.allplan_paths, AllplanPaths):
             return
 
-        if QApplication.keyboardModifiers() == Qt.ControlModifier:
+        modifiers = QApplication.keyboardModifiers()
+
+        if modifiers == Qt.ControlModifier or modifiers == Qt.ShiftModifier:
             copy_to_clipboard(value=self.allplan.allplan_paths.prj_path, show_msg=True)
             return
 
@@ -1784,7 +1978,9 @@ class Mainwindow(QMainWindow):
         if not isinstance(self.allplan.allplan_paths, AllplanPaths):
             return
 
-        if QApplication.keyboardModifiers() == Qt.ControlModifier:
+        modifiers = QApplication.keyboardModifiers()
+
+        if modifiers == Qt.ControlModifier or modifiers == Qt.ShiftModifier:
             copy_to_clipboard(value=self.allplan.allplan_paths.prg_path, show_msg=True)
             return
 
@@ -1795,7 +1991,9 @@ class Mainwindow(QMainWindow):
         if not isinstance(self.allplan.allplan_paths, AllplanPaths):
             return
 
-        if QApplication.keyboardModifiers() == Qt.ControlModifier:
+        modifiers = QApplication.keyboardModifiers()
+
+        if modifiers == Qt.ControlModifier or modifiers == Qt.ShiftModifier:
             copy_to_clipboard(value=self.allplan.allplan_paths.etc_path, show_msg=True)
             return
 
@@ -1806,7 +2004,9 @@ class Mainwindow(QMainWindow):
         if not isinstance(self.allplan.allplan_paths, AllplanPaths):
             return
 
-        if QApplication.keyboardModifiers() == Qt.ControlModifier:
+        modifiers = QApplication.keyboardModifiers()
+
+        if modifiers == Qt.ControlModifier or modifiers == Qt.ShiftModifier:
             copy_to_clipboard(value=self.allplan.allplan_paths.usr_path, show_msg=True)
             return
 
@@ -1817,7 +2017,9 @@ class Mainwindow(QMainWindow):
         if not isinstance(self.allplan.allplan_paths, AllplanPaths):
             return
 
-        if QApplication.keyboardModifiers() == Qt.ControlModifier:
+        modifiers = QApplication.keyboardModifiers()
+
+        if modifiers == Qt.ControlModifier or modifiers == Qt.ShiftModifier:
             copy_to_clipboard(value=self.allplan.allplan_paths.tmp_path, show_msg=True)
             return
 
@@ -1849,7 +2051,7 @@ class Mainwindow(QMainWindow):
     def app_aide(self):
 
         if not help_mode:
-            help_path = f"{asc_exe_path}help\\Mode d'emploi.pdf"
+            help_path = f"{asc_folder_path}help\\Mode d'emploi.pdf"
 
             if not os.path.exists(help_path):
                 msg(titre=application_title,
@@ -1903,6 +2105,18 @@ class Mainwindow(QMainWindow):
         menu.exec_(self.ui.statusbar.mapToGlobal(point))
 
     @staticmethod
+    def a___________________formulaire______():
+        pass
+
+    def envoyer_message(self):
+
+        self.formula_widget_close()
+
+        self.formulaire_widget = Formulaire()
+
+        move_window_tool(widget_parent=self, widget_current=self.formulaire_widget, always_center=True)
+
+    @staticmethod
     def a___________________help______():
         pass
 
@@ -1913,6 +2127,15 @@ class Mainwindow(QMainWindow):
 
         self.formula_widget_close()
         self.help_widget.help_show(short_link=short_link)
+
+    @staticmethod
+    def a___________________update______():
+        pass
+
+    def app_update(self):
+
+        self.formula_widget_close()
+        self.gestion_update.check_update(show_message=True)
 
     @staticmethod
     def a___________________formula_widget______():
@@ -1940,7 +2163,7 @@ class Mainwindow(QMainWindow):
         datas_config["attributes_order_col"] = self.attributes_order_col
         datas_config["attributes_order_custom"] = self.attributes_order_custom
         datas_config["brackets_color_on"] = self.allplan.formula_color
-        datas_config["description_show"] = self.catalog.description_show
+        datas_config["description_show"] = self.ui.hierarchy.description_show
         datas_config["ismaximized_on"] = self.isMaximized()
         datas_config["language"] = self.langue
         datas_config["path_catalog"] = self.catalog.catalog_path
@@ -1972,6 +2195,8 @@ class Mainwindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent):
 
+        self.catalog.catalog_lock_file(catalog_path=self.catalog.catalog_path, lock=False)
+
         if self.library_widget.isVisible():
             self.library_widget.close()
 
@@ -1988,6 +2213,12 @@ class Mainwindow(QMainWindow):
     def keyPressEvent(self, event: QKeyEvent):
 
         super().keyPressEvent(event)
+
+        if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
+
+            if self.ui.search_line.hasFocus():
+                self.search_bar.search_filter_enter_pressed()
+                return
 
         if event.modifiers() == Qt.ControlModifier and event.key() == Qt.Key_Q:
             sizes_list = self.ui.splitter.sizes()
@@ -2122,11 +2353,13 @@ class Mainwindow(QMainWindow):
 
         if event.type() == QEvent.KeyPress:
 
+            # noinspection PyUnresolvedReferences
             if event.key() == Qt.Key_Up or event.key() == Qt.Key_Down:
                 event.ignore()
 
                 self.ui.hierarchy.setFocus()
 
+                # noinspection PyUnresolvedReferences
                 QApplication.postEvent(self.ui.hierarchy, QKeyEvent(QEvent.KeyPress, event.key(), Qt.NoModifier))
 
                 return True
@@ -2411,6 +2644,11 @@ class Mainwindow(QMainWindow):
         return super().eventFilter(obj, event)
 
     def dragEnterEvent(self, event: QDragEnterEvent):
+
+        if self.library_widget.isVisible():
+            event.ignore()
+            return
+
         if event.mimeData().hasUrls():
 
             urls = event.mimeData().urls()
@@ -2431,6 +2669,11 @@ class Mainwindow(QMainWindow):
             event.ignore()
 
     def dragMoveEvent(self, event: QDragMoveEvent):
+
+        if self.library_widget.isVisible():
+            event.ignore()
+            return
+
         if event.mimeData().hasUrls():
             event.setDropAction(Qt.CopyAction)
 
@@ -2452,6 +2695,11 @@ class Mainwindow(QMainWindow):
             event.ignore()
 
     def dropEvent(self, event: QDropEvent):
+
+        if self.library_widget.isVisible():
+            event.ignore()
+            return
+
         if event.mimeData().hasUrls():
 
             event.setDropAction(Qt.CopyAction)
@@ -2475,6 +2723,9 @@ class Mainwindow(QMainWindow):
 
     def verification_drop(self, file_path: str, add=False) -> bool:
 
+        if not isinstance(file_path, str):
+            return False
+
         valid_file = False
 
         for extension in importable_file_extension:
@@ -2486,7 +2737,9 @@ class Mainwindow(QMainWindow):
         if not valid_file:
             return False
 
-        if file_path.lower().endswith(".apn") or file_path.lower().endswith(".prj"):
+        file_path_lower = file_path.lower()
+
+        if file_path_lower.endswith(".apn") or file_path_lower.endswith(".prj"):
 
             # todo à modifier
 
@@ -2516,14 +2769,25 @@ class Mainwindow(QMainWindow):
                 return False
 
             file_path = chemin_catalogue_tmp
+            file_path_lower = file_path.lower()
 
-        if verification_catalogue_correct(file_path, message=False) == "":
-            return False
+        if file_path_lower.endswith(".xml"):
+            check_catalog = verification_catalogue_correct(file_path, message=False)
 
-        if add:
+            if check_catalog != "XML":
+                return False
+
+            if not add:
+                return True
+
             print(f"smartcatlog -- verification_drop -- lancer chargement catalogue : {file_path}")
             self.catalog.catalog_load_start(catalog_path=file_path)
-        return True
+            return True
+
+        if not add:
+            return True
+
+        return self.new_catalog_widget.personnalisation(convert_bdd=True, file_path=file_path)
 
     @staticmethod
     def a___________________end______():
@@ -2559,74 +2823,78 @@ os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
 os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
 
 if __name__ == '__main__':
-    try:
-        tps1 = time.perf_counter()
 
-        print("application start")
+    tps1 = time.perf_counter()
+
+    print("application start")
+
+    if len(sys.argv) == 2:
+        app2 = SingleApplication(sys.argv, "Formulaire")
+
+    else:
 
         app2 = SingleApplication(sys.argv, application_name)
 
-        if app2.isrunning():
+    if app2.isrunning():
 
-            langue_app = settings_get(app_setting_file, 'language')
+        langue_app = settings_get(app_setting_file, 'language')
 
-            if isinstance(langue_app, str):
+        if isinstance(langue_app, str):
 
-                langue_app = langue_app.lower()
+            langue_app = langue_app.lower()
 
-                if langue_app == "fr":
-                    msg(titre=application_title,
-                        message="Application déjà ouverte, impossible d'ouvrir plusieurs instances.")
+            if langue_app == "fr":
+                msg(titre=application_title,
+                    message="Application déjà ouverte, impossible d'ouvrir plusieurs instances.")
 
-                    sys.exit(1)
+                sys.exit(1)
 
-                if langue_app == "de":
-                    msg(titre=application_title,
-                        message="Die Anwendung ist bereits geöffnet. "
-                                "Es können nicht mehrere Instanzen geöffnet werden.")
+            if langue_app == "de":
+                msg(titre=application_title,
+                    message="Die Anwendung ist bereits geöffnet. "
+                            "Es können nicht mehrere Instanzen geöffnet werden.")
 
-                    sys.exit(1)
+                sys.exit(1)
 
-                if langue_app == "it":
-                    msg(titre=application_title,
-                        message="L'applicazione è già aperta, non è possibile aprire più istanze.")
+            if langue_app == "it":
+                msg(titre=application_title,
+                    message="L'applicazione è già aperta, non è possibile aprire più istanze.")
 
-                    sys.exit(1)
+                sys.exit(1)
 
-                if langue_app == "es":
-                    msg(titre=application_title,
-                        message="La aplicación ya está abierta, no se pueden abrir varias instancias.")
+            if langue_app == "es":
+                msg(titre=application_title,
+                    message="La aplicación ya está abierta, no se pueden abrir varias instancias.")
 
-                    sys.exit(1)
+                sys.exit(1)
 
-            msg(titre=application_title,
-                message="Application is already open, impossible to open several instances.")
+        msg(titre=application_title,
+            message="Application is already open, impossible to open several instances.")
 
-            sys.exit(1)
+        sys.exit(1)
 
-        app = QApplication(sys.argv)
-        app.setApplicationVersion(application_version)
+    app = QApplication(sys.argv)
+    app.setApplicationVersion(application_version)
 
-        font = app.font()
-        font.setFamily("Segoe UI")
-        font.setPointSize(taille_police)
-        app.setFont(font)
+    font = app.font()
+    font.setFamily("Segoe UI")
+    font.setPointSize(taille_police)
+    app.setFont(font)
 
-        translator = QTranslator()
-        app.installTranslator(translator)
+    translator = QTranslator()
+    app.installTranslator(translator)
 
-        app.setStyle('Fusion')
+    app.setStyle('Fusion')
 
-        app.setStyleSheet("""QToolTip {background-color: white; padding: 2px;  border: 2px solid #E7E7E7}""")
+    app.setStyleSheet("""QToolTip {background-color: white; padding: 2px;  border: 2px solid #E7E7E7}""")
 
+    if len(sys.argv) == 2:
+        ex = Formulaire()
+    else:
         ex = Mainwindow()
 
-        print("--------------------------------------")
-        print(f"temps total d'execution : {time.perf_counter() - tps1} ms")
-        print("--------------------------------------")
+    print("--------------------------------------")
+    print(f"temps total d'execution : {time.perf_counter() - tps1} ms")
+    print("--------------------------------------")
 
-        sys.exit(app.exec_())
-
-    except Exception:
-        error_type, error_value, error_traceback = sys.exc_info()
-        traceback.print_exception(error_type, error_value, error_traceback)
+    sys.exit(app.exec_())

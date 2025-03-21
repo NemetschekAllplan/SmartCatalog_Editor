@@ -5,15 +5,14 @@ import os.path
 
 from allplan_manage import *
 from attribute_add import AttributesWidget
-from hierarchy_qs import material_code, component_code, attribute_code
+from hierarchy import material_code, component_code, attribute_code
 from tools import find_folder_path, get_look_tableview, qm_check, MyContextMenu, read_file_to_text
 from tools import model_verification, settings_save, move_window_tool, find_new_title, favorites_import_verification
-from tools import recherche_image, make_backup, settings_get, find_filename, settings_read
+from tools import recherche_image, make_backup, settings_get, find_filename, settings_read, browser_file
 from ui_model import Ui_Model
 from ui_model_modify import Ui_ModelModify
 from ui_model_tab import Ui_ModelTab
 from ui_model_tab_del import Ui_ModelTabDel
-from browser import browser_file
 
 col_opt_numero = 0
 col_opt_nom = 1
@@ -1007,7 +1006,7 @@ class ModelsTab(QWidget):
 
             list_number_add.append(number)
 
-            qs_list = self.creation_line(number=number)
+            qs_list = self.creation_line(number_str=number)
 
             if len(qs_list) == 0:
                 continue
@@ -1165,23 +1164,29 @@ class ModelsTab(QWidget):
 
         self.modification_en_cours = True
 
-    def creation_line(self, number: str) -> list:
+    def creation_line(self, number_str: str) -> list:
 
-        name_attribute = self.allplan.find_datas_by_number(number, code_attr_name)
+        attribute_obj = self.allplan.attributes_dict.get(number_str)
 
-        if name_attribute == "":
+        if not isinstance(attribute_obj, AttributeDatas):
+            print("models -- ModelsTab -- creation_line -- not isinstance(attribute_obj, AttributeDatas)")
+            return list()
+
+        if attribute_obj.name == "":
+            print("models -- ModelsTab -- creation_line -- attribute_obj.name == empty")
             return list()
 
         try:
-            number_attribute_int = int(number)
+            number_attribute_int = int(number_str)
         except Exception:
+            print("models -- ModelsTab -- creation_line -- number_str isn't numeric")
             return list()
 
-        qs_number = QStandardItem(number)
+        qs_number = QStandardItem(number_str)
         qs_number.setData(number_attribute_int, Qt.UserRole)
 
-        qs_name = QStandardItem(name_attribute)
-        qs_name.setData(name_attribute, Qt.UserRole)
+        qs_name = QStandardItem(attribute_obj.name)
+        qs_name.setData(attribute_obj.name, Qt.UserRole)
 
         return [qs_number, qs_name]
 

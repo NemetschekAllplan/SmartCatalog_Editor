@@ -5,10 +5,8 @@ from allplan_manage import *
 from attribute_add import AttributesWidget
 from catalog_manage import CatalogDatas
 from ui_order import Ui_Order
-from tools import get_look_tableview, find_folder_path, find_filename, make_backup, move_window_tool, MyContextMenu, \
-    read_file_to_text
-from tools import settings_save
-from browser import browser_file
+from tools import get_look_tableview, find_folder_path, find_filename, make_backup, move_window_tool, MyContextMenu
+from tools import settings_save, read_file_to_text, browser_file
 
 
 class OrderWidget(QWidget):
@@ -214,23 +212,31 @@ class OrderWidget(QWidget):
         self.order_model.clear()
         self.order_model.setHorizontalHeaderLabels([self.tr("Numéro"), self.tr("Nom")])
 
-        attribute_83_name = self.allplan.find_datas_by_number(number="83", key=code_attr_name)
+        attribute_obj = self.allplan.attributes_dict.get(attribut_default_obj.current)
 
-        qs_83_number = QStandardItem("83")
+        if not isinstance(attribute_obj, AttributeDatas):
+            print("order_widget -- order_model_init -- not isinstance(attribute_obj, AttributeDatas)")
+            return False
+
+        qs_83_number = QStandardItem(attribut_default_obj.current)
         qs_83_number.setSelectable(False)
 
-        qs_83_name = QStandardItem(attribute_83_name)
+        qs_83_name = QStandardItem(attribute_obj.name)
         qs_83_name.setSelectable(False)
 
         self.order_model.appendRow([qs_83_number, qs_83_name])
 
-        attribute_207_name = self.allplan.find_datas_by_number(number="207", key=code_attr_name)
+        # --------
+
+        attribute_obj = self.allplan.attributes_dict.get("207")
+
+        if not isinstance(attribute_obj, AttributeDatas):
+            print("order_widget -- order_model_init -- not isinstance(attribute_obj, AttributeDatas) 2")
+            return False
 
         qs_207_number = QStandardItem("207")
-        # qs_207_number.setSelectable(False)
 
-        qs_207_name = QStandardItem(attribute_207_name)
-        # qs_207_name.setSelectable(False)
+        qs_207_name = QStandardItem(attribute_obj.name)
 
         self.order_model.appendRow([qs_207_number, qs_207_name])
 
@@ -242,67 +248,71 @@ class OrderWidget(QWidget):
         fill_in = False
         room_in = False
 
-        for number in attributes_list:
+        for number_str in attributes_list:
 
-            if not isinstance(number, str):
+            if not isinstance(number_str, str):
                 continue
 
-            if number in ["83", "207"]:
+            if number_str in ["83", "207"]:
                 continue
 
-            if number in attribute_val_default_layer:
+            if number_str in attribute_val_default_layer:
                 if not layer_in:
 
-                    name = self.allplan.find_datas_by_number(number=attribute_val_default_layer_first,
-                                                             key=code_attr_name)
+                    attribute_obj = self.allplan.attributes_dict.get(attribute_val_default_layer_first)
 
-                    if not isinstance(name, str):
+                    if not isinstance(attribute_obj, AttributeDatas):
+                        print("order_widget -- order_model_init -- not isinstance(attribute_obj, AttributeDatas) 3")
                         continue
 
-                    self.order_model.appendRow([QStandardItem(attribute_val_default_layer_first), QStandardItem(name)])
+                    self.order_model.appendRow(
+                        [QStandardItem(attribute_val_default_layer_first), QStandardItem(attribute_obj.name)])
 
                     layer_in = True
                     continue
                 continue
 
-            if number in attribute_val_default_fill:
+            if number_str in attribute_val_default_fill:
 
                 if not fill_in:
 
-                    name = self.allplan.find_datas_by_number(number=attribute_val_default_fill_first,
-                                                             key=code_attr_name)
+                    attribute_obj = self.allplan.attributes_dict.get(attribute_val_default_fill_first)
 
-                    if not isinstance(name, str):
+                    if not isinstance(attribute_obj, AttributeDatas):
+                        print("order_widget -- order_model_init -- not isinstance(attribute_obj, AttributeDatas) 4")
                         continue
 
-                    self.order_model.appendRow([QStandardItem(attribute_val_default_fill_first), QStandardItem(name)])
+                    self.order_model.appendRow(
+                        [QStandardItem(attribute_val_default_fill_first), QStandardItem(attribute_obj.name)])
 
                     fill_in = True
                     continue
                 continue
 
-            if number in attribute_val_default_room:
+            if number_str in attribute_val_default_room:
 
                 if not room_in:
 
-                    name = self.allplan.find_datas_by_number(number=attribute_val_default_room_first,
-                                                             key=code_attr_name)
+                    attribute_obj = self.allplan.attributes_dict.get(attribute_val_default_room_first)
 
-                    if not isinstance(name, str):
+                    if not isinstance(attribute_obj, AttributeDatas):
+                        print("order_widget -- order_model_init -- not isinstance(attribute_obj, AttributeDatas) 5")
                         continue
 
-                    self.order_model.appendRow([QStandardItem(attribute_val_default_room_first), QStandardItem(name)])
+                    self.order_model.appendRow(
+                        [QStandardItem(attribute_val_default_room_first), QStandardItem(attribute_obj.name)])
 
                     room_in = True
                     continue
                 continue
 
-            name = self.allplan.find_datas_by_number(number=number, key=code_attr_name)
+            attribute_obj = self.allplan.attributes_dict.get(number_str)
 
-            if not isinstance(name, str):
+            if not isinstance(attribute_obj, AttributeDatas):
+                print("order_widget -- order_model_init -- not isinstance(attribute_obj, AttributeDatas) 6")
                 continue
 
-            self.order_model.appendRow([QStandardItem(number), QStandardItem(name)])
+            self.order_model.appendRow([QStandardItem(number_str), QStandardItem(attribute_obj.name)])
 
         if len(selection_list) != 0:
             self.order_restore_selection(old_selection=selection_list)
@@ -453,23 +463,23 @@ class OrderWidget(QWidget):
 
         qm_end = None
 
-        for number in attributes_list:
+        for number_str in attributes_list:
 
-            if not isinstance(number, str):
+            if not isinstance(number_str, str):
                 continue
 
-            if number in attribute_val_default_layer:
-                number = attribute_val_default_layer_first
+            if number_str in attribute_val_default_layer:
+                number_str = attribute_val_default_layer_first
 
-            elif number in attribute_val_default_fill:
-                number = attribute_val_default_fill_first
+            elif number_str in attribute_val_default_fill:
+                number_str = attribute_val_default_fill_first
 
-            elif number in attribute_val_default_room:
-                number = attribute_val_default_room_first
+            elif number_str in attribute_val_default_room:
+                number_str = attribute_val_default_room_first
 
-            if number in attributes_exist_list:
+            if number_str in attributes_exist_list:
 
-                search = self.order_model.match(search_start, Qt.DisplayRole, number, 1, Qt.MatchExactly)
+                search = self.order_model.match(search_start, Qt.DisplayRole, number_str, 1, Qt.MatchExactly)
 
                 if len(search) == 0:
                     continue
@@ -483,21 +493,24 @@ class OrderWidget(QWidget):
 
                 continue
 
-            name = self.allplan.find_datas_by_number(number=number, key=code_attr_name)
+            attribute_obj = self.allplan.attributes_dict.get(number_str)
 
-            if not isinstance(name, str):
+            if not isinstance(attribute_obj, AttributeDatas):
+                print("order_widget -- order_add_action -- not isinstance(attribute_obj, AttributeDatas)")
                 continue
 
             self.modification_made = True
 
             if insert_row_index == -1:
 
-                self.order_model.appendRow([QStandardItem(number), QStandardItem(name)])
+                self.order_model.appendRow([QStandardItem(number_str), QStandardItem(attribute_obj.name)])
                 qm_end = self.order_model.index(self.order_model.rowCount() - 1, 0)
 
             else:
 
-                self.order_model.insertRow(insert_row_index, [QStandardItem(number), QStandardItem(name)])
+                self.order_model.insertRow(insert_row_index,
+                                           [QStandardItem(number_str), QStandardItem(attribute_obj.name)])
+
                 qm_end = self.order_model.index(insert_row_index, 0)
 
                 insert_row_index += 1
@@ -586,7 +599,7 @@ class OrderWidget(QWidget):
 
             qs_deleted_list = self.order_model.takeRow(index_row)
 
-            if modifiers == Qt.ControlModifier:
+            if modifiers == Qt.ControlModifier or modifiers == Qt.ShiftModifier:
 
                 row_futur = index_list + first_index
 
@@ -675,7 +688,7 @@ class OrderWidget(QWidget):
             if len(qs_deleted_list) != self.order_model.columnCount():
                 continue
 
-            if modifiers == Qt.ControlModifier:
+            if modifiers == Qt.ControlModifier or modifiers == Qt.ShiftModifier:
 
                 row_futur = last_index - index_list - 1
 

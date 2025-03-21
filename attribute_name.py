@@ -5,17 +5,18 @@ import os.path
 
 from allplan_manage import AllplanDatas, AllplanPaths
 from formatting_widget import Formatting
-from hierarchy_qs import *
+from hierarchy import Folder
+from main_datas import *
+from history_manage import AttributeModifyData
 from tools import afficher_message as msg, MyContextMenu
 from tools import get_most_used, get_lastest_used, get_image_dimensions
-from tools import set_appareance_button, find_global_point
+from tools import set_appareance_button, find_global_point, browser_file
 from ui_attribute_name import Ui_AttributeName
-from browser import browser_file
 
 
 class AttributeName(QWidget):
-    attribute_changed_signal = pyqtSignal(QStandardItem, str, str, str)
-    icon_changed_signal = pyqtSignal(QStandardItem, str, str)
+    attribute_changed_signal = pyqtSignal(str, list, str, dict)
+    icon_changed_signal = pyqtSignal(QStandardItem)
 
     def __init__(self, allplan: AllplanDatas, qs_value: Folder, qs_selection_list: list):
 
@@ -109,33 +110,58 @@ class AttributeName(QWidget):
                                            "border-bottom-left-radius: 5px; }")
 
     def name_check_end(self):
-        self.name_check_before_update(value=self.ui.value_attrib.text())
+        self.name_check_before_update(value_new=self.ui.value_attrib.text())
 
-    def name_check_before_update(self, value: str):
+    def name_check_before_update(self, value_new: str):
 
-        value_original = self.qs_value.text()
+        value_current = self.qs_value.text()
 
-        value_strip = value.strip()
-
-        if value != value_strip:
+        if value_new != value_new.strip():
             self.ui.value_attrib.blockSignals(True)
-            self.ui.value_attrib.setText(value_strip)
+            self.ui.value_attrib.setText(value_new.strip())
             self.ui.value_attrib.blockSignals(False)
+            value_new = value_new.strip()
 
-        if value_strip == "":
+        if value_new == "":
             msg(titre=application_title,
                 message=self.tr("Impossible de laisser ce titre sans texte."),
                 icone_critique=True)
 
-            self.ui.value_attrib.setText(value_original)
+            self.ui.value_attrib.setText(value_current)
             return
 
-        if value_original == value_strip:
+        if value_current == value_new:
             return
 
-        self.qs_value.setText(value_strip)
+        self.qs_value.setText(value_new)
 
-        self.attribute_changed_signal.emit(self.qs_value, attribute_default_base, value_original, value_strip)
+        # -------------
+
+        value_dict = {attribut_default_obj.current: [value_current, value_new]}
+
+        # -------------
+
+        guid_parent = self.qs_value.data(user_guid)
+
+        if not isinstance(guid_parent, str):
+            print("attribute_name -- name_check_before_update -- not isinstance(guid_parent, str)")
+            return
+
+        # -------------
+
+        parent_name = self.qs_value.text()
+
+        if not isinstance(parent_name, str):
+            print("attribute_name -- name_check_before_update -- not isinstance(parent_name, str)")
+            return
+
+        # -------------
+
+        data = AttributeModifyData(number_current=attribut_default_obj.current, value_new=value_current)
+
+        attribute_data = [data]
+
+        self.attribute_changed_signal.emit(guid_parent, attribute_data, parent_name, value_dict)
 
     @staticmethod
     def a___________________formatting______():
@@ -220,7 +246,7 @@ class AttributeName(QWidget):
         self.allplan.recent_icons_list.append(file_path)
 
         if self.qs_selection_list is None:
-            self.icon_changed_signal.emit(self.qs_value, self.qs_value.icon_path, file_path)
+            self.icon_changed_signal.emit(self.qs_value)
 
             self.qs_value.icon_path = file_path
             self.qs_value.setIcon(get_icon(file_path))
@@ -231,7 +257,7 @@ class AttributeName(QWidget):
             if not isinstance(qs_value, Folder):
                 continue
 
-            self.icon_changed_signal.emit(qs_value, qs_value.icon_path, file_path)
+            self.icon_changed_signal.emit(qs_value)
 
             qs_value.icon_path = file_path
             qs_value.setIcon(get_icon(file_path))
