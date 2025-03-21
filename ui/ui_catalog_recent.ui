@@ -1,0 +1,372 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>CatalogRecent</class>
+ <widget class="QWidget" name="CatalogRecent">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>350</width>
+    <height>500</height>
+   </rect>
+  </property>
+  <property name="styleSheet">
+   <string notr="true">QWidget#CatalogRecent {background:#FFFFFF}</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout_2">
+   <property name="spacing">
+    <number>0</number>
+   </property>
+   <item>
+    <widget class="QWidget" name="widget" native="true">
+     <property name="styleSheet">
+      <string notr="true">QWidget#widget{border: 1px solid #8f8f91; border-top-left-radius: 5px; border-top-right-radius: 5px; border-bottom-width: 0px;}</string>
+     </property>
+     <layout class="QVBoxLayout" name="verticalLayout">
+      <item>
+       <layout class="QHBoxLayout" name="folder_layer">
+        <item>
+         <widget class="QPushButton" name="demo_bt">
+          <property name="minimumSize">
+           <size>
+            <width>40</width>
+            <height>24</height>
+           </size>
+          </property>
+          <property name="font">
+           <font>
+            <pointsize>8</pointsize>
+            <weight>50</weight>
+            <bold>false</bold>
+           </font>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QPushButton{border: 1px solid #8f8f91; border-radius: 5px;  }
+QPushButton:checked{border: 1px solid #8f8f91; background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1, stop:0 #BAD0E7, stop:1 #FFFFFF); }
+QPushButton:hover{border: 1px solid #8f8f91; background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1, stop:0 #D8D8D8, stop:1 #FFFFFF); }</string>
+          </property>
+          <property name="text">
+           <string notr="true">Démo</string>
+          </property>
+          <property name="checkable">
+           <bool>true</bool>
+          </property>
+          <property name="checked">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="etc_bt">
+          <property name="minimumSize">
+           <size>
+            <width>40</width>
+            <height>24</height>
+           </size>
+          </property>
+          <property name="font">
+           <font>
+            <pointsize>8</pointsize>
+            <weight>50</weight>
+            <bold>false</bold>
+           </font>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QPushButton{border: 1px solid #8f8f91; border-radius: 5px;  }
+QPushButton:checked{border: 1px solid #8f8f91; background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1, stop:0 #BAD0E7, stop:1 #FFFFFF); }
+QPushButton:hover{border: 1px solid #8f8f91; background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1, stop:0 #D8D8D8, stop:1 #FFFFFF); }</string>
+          </property>
+          <property name="text">
+           <string notr="true">ETC</string>
+          </property>
+          <property name="checkable">
+           <bool>true</bool>
+          </property>
+          <property name="checked">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="std_bt">
+          <property name="minimumSize">
+           <size>
+            <width>40</width>
+            <height>24</height>
+           </size>
+          </property>
+          <property name="font">
+           <font>
+            <pointsize>8</pointsize>
+            <weight>50</weight>
+            <bold>false</bold>
+           </font>
+          </property>
+          <property name="toolTip">
+           <string>Supprimer la recherche</string>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QPushButton{border: 1px solid #8f8f91; border-radius: 5px;  }
+QPushButton:checked{border: 1px solid #8f8f91; background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1, stop:0 #BAD0E7, stop:1 #FFFFFF); }
+QPushButton:hover{border: 1px solid #8f8f91; background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1, stop:0 #D8D8D8, stop:1 #FFFFFF); }</string>
+          </property>
+          <property name="text">
+           <string notr="true">STD</string>
+          </property>
+          <property name="checkable">
+           <bool>true</bool>
+          </property>
+          <property name="checked">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="other_bt">
+          <property name="minimumSize">
+           <size>
+            <width>40</width>
+            <height>24</height>
+           </size>
+          </property>
+          <property name="font">
+           <font>
+            <pointsize>8</pointsize>
+            <weight>50</weight>
+            <bold>false</bold>
+           </font>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QPushButton{border: 1px solid #8f8f91; border-radius: 5px;  }
+QPushButton:checked{border: 1px solid #8f8f91; background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1, stop:0 #BAD0E7, stop:1 #FFFFFF); }
+QPushButton:hover{border: 1px solid #8f8f91; background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1, stop:0 #D8D8D8, stop:1 #FFFFFF); }</string>
+          </property>
+          <property name="text">
+           <string>Autre</string>
+          </property>
+          <property name="checkable">
+           <bool>true</bool>
+          </property>
+          <property name="checked">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="year_layer">
+        <item>
+         <widget class="QPushButton" name="a2022_bt">
+          <property name="minimumSize">
+           <size>
+            <width>40</width>
+            <height>24</height>
+           </size>
+          </property>
+          <property name="font">
+           <font>
+            <pointsize>8</pointsize>
+            <weight>50</weight>
+            <bold>false</bold>
+           </font>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QPushButton{border: 1px solid #8f8f91; border-radius: 5px;  }
+QPushButton:checked{border: 1px solid #8f8f91; background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1, stop:0 #BAD0E7, stop:1 #FFFFFF); }
+QPushButton:hover{border: 1px solid #8f8f91; background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1, stop:0 #D8D8D8, stop:1 #FFFFFF); }</string>
+          </property>
+          <property name="text">
+           <string notr="true">2022</string>
+          </property>
+          <property name="checkable">
+           <bool>true</bool>
+          </property>
+          <property name="checked">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="a2023_bt">
+          <property name="minimumSize">
+           <size>
+            <width>40</width>
+            <height>24</height>
+           </size>
+          </property>
+          <property name="font">
+           <font>
+            <pointsize>8</pointsize>
+            <weight>50</weight>
+            <bold>false</bold>
+           </font>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QPushButton{border: 1px solid #8f8f91; border-radius: 5px;  }
+QPushButton:checked{border: 1px solid #8f8f91; background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1, stop:0 #BAD0E7, stop:1 #FFFFFF); }
+QPushButton:hover{border: 1px solid #8f8f91; background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1, stop:0 #D8D8D8, stop:1 #FFFFFF); }</string>
+          </property>
+          <property name="text">
+           <string notr="true">2023</string>
+          </property>
+          <property name="checkable">
+           <bool>true</bool>
+          </property>
+          <property name="checked">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="a2024_bt">
+          <property name="minimumSize">
+           <size>
+            <width>40</width>
+            <height>24</height>
+           </size>
+          </property>
+          <property name="font">
+           <font>
+            <pointsize>8</pointsize>
+            <weight>50</weight>
+            <bold>false</bold>
+           </font>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QPushButton{border: 1px solid #8f8f91; border-radius: 5px;  }
+QPushButton:checked{border: 1px solid #8f8f91; background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1, stop:0 #BAD0E7, stop:1 #FFFFFF); }
+QPushButton:hover{border: 1px solid #8f8f91; background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1, stop:0 #D8D8D8, stop:1 #FFFFFF); }</string>
+          </property>
+          <property name="text">
+           <string notr="true">2024</string>
+          </property>
+          <property name="checkable">
+           <bool>true</bool>
+          </property>
+          <property name="checked">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="a2025_bt">
+          <property name="minimumSize">
+           <size>
+            <width>40</width>
+            <height>24</height>
+           </size>
+          </property>
+          <property name="font">
+           <font>
+            <pointsize>8</pointsize>
+            <weight>50</weight>
+            <bold>false</bold>
+           </font>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QPushButton{border: 1px solid #8f8f91; border-radius: 5px;  }
+QPushButton:checked{border: 1px solid #8f8f91; background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1, stop:0 #BAD0E7, stop:1 #FFFFFF); }
+QPushButton:hover{border: 1px solid #8f8f91; background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1, stop:0 #D8D8D8, stop:1 #FFFFFF); }</string>
+          </property>
+          <property name="text">
+           <string notr="true">2025</string>
+          </property>
+          <property name="checkable">
+           <bool>true</bool>
+          </property>
+          <property name="checked">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="a2026_bt">
+          <property name="minimumSize">
+           <size>
+            <width>40</width>
+            <height>24</height>
+           </size>
+          </property>
+          <property name="font">
+           <font>
+            <pointsize>8</pointsize>
+            <weight>50</weight>
+            <bold>false</bold>
+           </font>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QPushButton{border: 1px solid #8f8f91; border-radius: 5px;  }
+QPushButton:checked{border: 1px solid #8f8f91; background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1, stop:0 #BAD0E7, stop:1 #FFFFFF); }
+QPushButton:hover{border: 1px solid #8f8f91; background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1, stop:0 #D8D8D8, stop:1 #FFFFFF); }</string>
+          </property>
+          <property name="text">
+           <string notr="true">2026</string>
+          </property>
+          <property name="checkable">
+           <bool>true</bool>
+          </property>
+          <property name="checked">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QTreeView" name="hierarchy_recent">
+     <property name="font">
+      <font>
+       <pointsize>10</pointsize>
+      </font>
+     </property>
+     <property name="styleSheet">
+      <string notr="true">border: 1px solid #8f8f91</string>
+     </property>
+     <property name="editTriggers">
+      <set>QAbstractItemView::NoEditTriggers</set>
+     </property>
+     <property name="alternatingRowColors">
+      <bool>true</bool>
+     </property>
+     <property name="selectionMode">
+      <enum>QAbstractItemView::SingleSelection</enum>
+     </property>
+     <property name="selectionBehavior">
+      <enum>QAbstractItemView::SelectItems</enum>
+     </property>
+     <property name="iconSize">
+      <size>
+       <width>20</width>
+       <height>20</height>
+      </size>
+     </property>
+     <attribute name="headerVisible">
+      <bool>false</bool>
+     </attribute>
+     <attribute name="headerStretchLastSection">
+      <bool>false</bool>
+     </attribute>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <tabstops>
+  <tabstop>etc_bt</tabstop>
+  <tabstop>std_bt</tabstop>
+  <tabstop>other_bt</tabstop>
+  <tabstop>a2022_bt</tabstop>
+  <tabstop>a2023_bt</tabstop>
+  <tabstop>a2024_bt</tabstop>
+  <tabstop>a2025_bt</tabstop>
+  <tabstop>a2026_bt</tabstop>
+  <tabstop>hierarchy_recent</tabstop>
+ </tabstops>
+ <resources>
+  <include location="../icones/icons.qrc"/>
+ </resources>
+ <connections/>
+</ui>

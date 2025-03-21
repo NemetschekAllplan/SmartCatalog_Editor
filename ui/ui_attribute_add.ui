@@ -144,6 +144,16 @@
        </item>
        <item>
         <property name="text">
+         <string>Attribut import</string>
+        </property>
+        <property name="font">
+         <font>
+          <italic>true</italic>
+         </font>
+        </property>
+       </item>
+       <item>
+        <property name="text">
          <string notr="true">--------------------------------</string>
         </property>
         <property name="flags">

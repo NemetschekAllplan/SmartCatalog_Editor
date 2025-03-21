@@ -10,6 +10,9 @@
     <height>726</height>
    </rect>
   </property>
+  <property name="acceptDrops">
+   <bool>true</bool>
+  </property>
   <property name="windowTitle">
    <string notr="true">Form</string>
   </property>
@@ -43,7 +46,7 @@
      <property name="childrenCollapsible">
       <bool>false</bool>
      </property>
-     <widget class="QTreeView" name="library_hierarchy">
+     <widget class="Hierarchy" name="hierarchy">
       <property name="minimumSize">
        <size>
         <width>450</width>
@@ -53,14 +56,14 @@
       <property name="contextMenuPolicy">
        <enum>Qt::CustomContextMenu</enum>
       </property>
-      <property name="styleSheet">
-       <string notr="true">QHeaderView {background-color: #d8e9e8}</string>
-      </property>
-      <property name="autoScroll">
-       <bool>false</bool>
+      <property name="lineWidth">
+       <number>9</number>
       </property>
       <property name="editTriggers">
        <set>QAbstractItemView::NoEditTriggers</set>
+      </property>
+      <property name="showDropIndicator" stdset="0">
+       <bool>false</bool>
       </property>
       <property name="alternatingRowColors">
        <bool>true</bool>
@@ -80,9 +83,6 @@
       <property name="expandsOnDoubleClick">
        <bool>false</bool>
       </property>
-      <attribute name="headerStretchLastSection">
-       <bool>true</bool>
-      </attribute>
      </widget>
      <widget class="QTableView" name="library_details">
       <property name="minimumSize">
@@ -296,6 +296,41 @@
         <property name="icon">
          <iconset resource="../icones/icons.qrc">
           <normaloff>:/Images/component.png</normaloff>:/Images/component.png</iconset>
+        </property>
+        <property name="iconSize">
+         <size>
+          <width>20</width>
+          <height>20</height>
+         </size>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="link">
+        <property name="minimumSize">
+         <size>
+          <width>30</width>
+          <height>24</height>
+         </size>
+        </property>
+        <property name="maximumSize">
+         <size>
+          <width>30</width>
+          <height>24</height>
+         </size>
+        </property>
+        <property name="focusPolicy">
+         <enum>Qt::NoFocus</enum>
+        </property>
+        <property name="toolTip">
+         <string>Attribut</string>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">QPushButton{border: 0px}</string>
+        </property>
+        <property name="icon">
+         <iconset resource="../icones/icons.qrc">
+          <normaloff>:/Images/link.png</normaloff>:/Images/link.png</iconset>
         </property>
         <property name="iconSize">
          <size>
@@ -764,7 +799,7 @@ QPushButton:pressed{border-top-width: 1px; border-left-width: 1px; padding: 0px;
         </property>
         <layout class="QHBoxLayout" name="horizontalLayout">
          <property name="spacing">
-          <number>0</number>
+          <number>6</number>
          </property>
          <property name="sizeConstraint">
           <enum>QLayout::SetMinimumSize</enum>
@@ -782,7 +817,7 @@ QPushButton:pressed{border-top-width: 1px; border-left-width: 1px; padding: 0px;
           <number>0</number>
          </property>
          <item>
-          <widget class="QLineEdit" name="library_search">
+          <widget class="QLineEdit" name="search_line">
            <property name="sizePolicy">
             <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
              <horstretch>0</horstretch>
@@ -807,11 +842,8 @@ QPushButton:pressed{border-top-width: 1px; border-left-width: 1px; padding: 0px;
              <pointsize>10</pointsize>
             </font>
            </property>
-           <property name="toolTip">
-            <string>Rechercher</string>
-           </property>
            <property name="styleSheet">
-            <string notr="true">QLineEdit{border: 1px solid #8f8f91; border-top-left-radius: 5px; border-bottom-left-radius: 5px; padding-left: 5px; }</string>
+            <string notr="true">QLineEdit{border: 1px solid #8f8f91; border-radius: 5px; padding-left: 5px; }</string>
            </property>
            <property name="placeholderText">
             <string>Rechercher</string>
@@ -819,7 +851,7 @@ QPushButton:pressed{border-top-width: 1px; border-left-width: 1px; padding: 0px;
           </widget>
          </item>
          <item>
-          <widget class="QPushButton" name="library_search_clear">
+          <widget class="QPushButton" name="search_bt">
            <property name="minimumSize">
             <size>
              <width>40</width>
@@ -833,22 +865,25 @@ QPushButton:pressed{border-top-width: 1px; border-left-width: 1px; padding: 0px;
             </size>
            </property>
            <property name="toolTip">
-            <string>Supprimer la recherche</string>
+            <string>Lancer la recherche</string>
            </property>
            <property name="styleSheet">
-            <string notr="true">QPushButton{border: 1px solid #8f8f91; border-left-width: 0px; border-bottom-right-radius: 5px; border-top-right-radius: 5px; background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1, stop:0 #FFFFFF, stop:1 #BAD0E7); }
+            <string notr="true">QPushButton{border: 1px solid #8f8f91; border-radius: 5px; background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1, stop:0 #FFFFFF, stop:1 #BAD0E7); }
 QPushButton:hover{background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1, stop:0 #F8F8F8, stop:1 #8FADCC); }
-QPushButton:pressed{background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1, stop:0 #8FADCC, stop:1 #F8F8F8); }</string>
+QPushButton:checked{background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1, stop:0 #8FADCC, stop:1 #F8F8F8); }</string>
            </property>
            <property name="icon">
             <iconset resource="../icones/icons.qrc">
-             <normaloff>:/Images/search_clear.svg</normaloff>:/Images/search_clear.svg</iconset>
+             <normaloff>:/Images/search.svg</normaloff>:/Images/search.svg</iconset>
            </property>
            <property name="iconSize">
             <size>
              <width>20</width>
              <height>20</height>
             </size>
+           </property>
+           <property name="checkable">
+            <bool>true</bool>
            </property>
           </widget>
          </item>
@@ -945,14 +980,21 @@ QPushButton:pressed{border-top-width: 1px; background-color: qlineargradient(spr
    </item>
   </layout>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>Hierarchy</class>
+   <extends>QTreeView</extends>
+   <header>hierarchy.h</header>
+  </customwidget>
+ </customwidgets>
  <tabstops>
   <tabstop>library_refresh</tabstop>
   <tabstop>library_expand_all</tabstop>
   <tabstop>library_collapse_all</tabstop>
   <tabstop>library_synchro</tabstop>
-  <tabstop>library_search</tabstop>
-  <tabstop>library_search_clear</tabstop>
-  <tabstop>library_hierarchy</tabstop>
+  <tabstop>search_line</tabstop>
+  <tabstop>search_bt</tabstop>
+  <tabstop>hierarchy</tabstop>
   <tabstop>library_details</tabstop>
   <tabstop>ok</tabstop>
   <tabstop>quit</tabstop>

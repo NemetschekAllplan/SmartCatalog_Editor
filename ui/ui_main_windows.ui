@@ -1906,7 +1906,7 @@ QPushButton:pressed {border-left:1px solid #B2B2B2; border-right:1px solid #B2B2
       <property name="childrenCollapsible">
        <bool>false</bool>
       </property>
-      <widget class="QTreeView" name="hierarchy">
+      <widget class="Hierarchy" name="hierarchy">
        <property name="minimumSize">
         <size>
          <width>450</width>
@@ -1928,6 +1928,9 @@ QPushButton:pressed {border-left:1px solid #B2B2B2; border-right:1px solid #B2B2
        <property name="contextMenuPolicy">
         <enum>Qt::CustomContextMenu</enum>
        </property>
+       <property name="acceptDrops">
+        <bool>true</bool>
+       </property>
        <property name="lineWidth">
         <number>9</number>
        </property>
@@ -1948,6 +1951,9 @@ QPushButton:pressed {border-left:1px solid #B2B2B2; border-right:1px solid #B2B2
          <width>20</width>
          <height>20</height>
         </size>
+       </property>
+       <property name="autoExpandDelay">
+        <number>500</number>
        </property>
        <property name="animated">
         <bool>true</bool>
@@ -2018,6 +2024,13 @@ QPushButton:pressed {border-left:1px solid #B2B2B2; border-right:1px solid #B2B2
    </property>
   </widget>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>Hierarchy</class>
+   <extends>QTreeView</extends>
+   <header>hierarchy.h</header>
+  </customwidget>
+ </customwidgets>
  <tabstops>
   <tabstop>hierarchy</tabstop>
   <tabstop>attributes_detail</tabstop>
