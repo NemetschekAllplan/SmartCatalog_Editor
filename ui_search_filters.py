@@ -406,7 +406,7 @@ class Ui_SearchFilter(object):
     def retranslateUi(self, SearchFilter):
         _translate = QtCore.QCoreApplication.translate
         self.search_in_title.setText(_translate("SearchFilter", "Rechercher"))
-        self.search_in_code.setText(_translate("SearchFilter", "Dans les Titres ou les Attribut 83"))
+        self.search_in_code.setText(_translate("SearchFilter", "Dans les Titres"))
         self.search_in_attribute_all.setText(_translate("SearchFilter", "Dans tous les attributs"))
         self.search_in_attribute_one.setText(_translate("SearchFilter", "Dans un attribut spécifique"))
         self.search_in_number.setText(_translate("SearchFilter", "Un numéro d\'attributs"))

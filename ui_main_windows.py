@@ -786,7 +786,7 @@ class Ui_MainWindow(object):
         self.splitter.setHandleWidth(10)
         self.splitter.setChildrenCollapsible(False)
         self.splitter.setObjectName("splitter")
-        self.hierarchy = QtWidgets.QTreeView(self.splitter)
+        self.hierarchy = Hierarchy(self.splitter)
         self.hierarchy.setMinimumSize(QtCore.QSize(450, 0))
         self.hierarchy.setMaximumSize(QtCore.QSize(16777215, 16777215))
         font = QtGui.QFont()
@@ -794,12 +794,14 @@ class Ui_MainWindow(object):
         font.setPointSize(10)
         self.hierarchy.setFont(font)
         self.hierarchy.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.hierarchy.setAcceptDrops(True)
         self.hierarchy.setLineWidth(9)
         self.hierarchy.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.hierarchy.setTabKeyNavigation(True)
         self.hierarchy.setAlternatingRowColors(True)
         self.hierarchy.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self.hierarchy.setIconSize(QtCore.QSize(20, 20))
+        self.hierarchy.setAutoExpandDelay(500)
         self.hierarchy.setAnimated(True)
         self.hierarchy.setObjectName("hierarchy")
         self.attributes_detail = QtWidgets.QListWidget(self.splitter)
@@ -869,6 +871,7 @@ class Ui_MainWindow(object):
         self.attribute_list_bt.setToolTip(_translate("MainWindow", "Ajouter un ou plusieurs attributs selon un modèle d\'attributs"))
         self.component_add_bt.setToolTip(_translate("MainWindow", "Ajouter un nouveau composant (CTRL + clic = Ajouter jusqu\'à 10 composants)"))
         self.component_list_bt.setToolTip(_translate("MainWindow", "Ajouter un ou plusieurs composants selon un modèle d\'attributs (CTRL + clic = Ajouter jusqu\'à 10 composants)"))
+from hierarchy import Hierarchy
 import icons_rc
 
 

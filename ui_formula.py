@@ -407,7 +407,7 @@ class Ui_Formula(object):
         self.object.setToolTip(_translate("Formula", "Objet"))
         self.function.setToolTip(_translate("Formula", "Fonctions"))
         self.finishing.setToolTip(_translate("Formula", "Second-Œuvre"))
-        self.operator_bt.setToolTip(_translate("Formula", "Fonctions"))
+        self.operator_bt.setToolTip(_translate("Formula", "Opérateur"))
         self.bt_formule_couleur.setToolTip(_translate("Formula", "Coloriser les couples de parenthèses"))
         self.bt_favoris.setToolTip(_translate("Formula", "Ouvrir les favoris"))
         self.ok.setText(_translate("Formula", "Valider"))
